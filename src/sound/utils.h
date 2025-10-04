@@ -52,6 +52,23 @@ void shiftDown(int16_t* buffer, int numSamples) {
   }
 }
 
+void noramlize(int16_t* buffer, int numSamples) {
+    int16_t maxVal = buffer[0];
+    int16_t minVal = buffer[0];
+
+    for (int i = 1; i < numSamples; i++) {
+        if (buffer[i] > maxVal) maxVal = buffer[i];
+        if (buffer[i] < minVal) minVal = buffer[i];
+    }
+
+ //   int16_t max = (maxVal > minVal ? maxVal : minVal);
+    int peak = (abs(maxVal) > abs(minVal)) ? abs(maxVal) : abs(minVal);
+    int16_t free = 32767 - peak;
+
+    
+
+}
+
 float searchMaxIncreaseVolume(int16_t* buffer, int numSamples) {
     int16_t maxVal = buffer[0];
     int16_t minVal = buffer[0];

@@ -24,9 +24,9 @@ class RecordSound {
 
   static RecordSound* instance;
 
-  bool* isRunning = nullptr;
+  bool& isRunning;
   bool& isAutoSend;
-  bool* isPauseAfterCallback = nullptr;
+  bool& pauseAfterCb;
 
   bool isFullBuffer = false;
 
@@ -39,7 +39,8 @@ class RecordSound {
   u_int32_t bufferSize = 0;
 
   void start(int milliseconds);
-  void start();
+  void setBuffer(int16_t* buffer, size_t numSamples);
+  void start(bool disableBuffer = false);
   void pause();
 
   void send();

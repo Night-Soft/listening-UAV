@@ -44,6 +44,28 @@ struct AudioTaskConfig;  // forward declaration
 //   delay(10);
 // }
 
+//const int BUFFER_SIZE = 512;
+// const int CHUNK_SIZE = 64;
+
+// byte bigBuffer[BUFFER_SIZE];
+
+// // Пример: заполним буфер тестовыми данными
+// void fillBuffer() {
+//   for (int i = 0; i < BUFFER_SIZE; i++) {
+//     bigBuffer[i] = i % 256;
+//   }
+// }
+
+// void sendBufferInChunks() {
+//   for (int i = 0; i < BUFFER_SIZE; i += CHUNK_SIZE) {
+//     int bytesToSend = min(CHUNK_SIZE, BUFFER_SIZE - i);
+//     Serial.write(bigBuffer + i, bytesToSend);
+
+//     // ⚠️ Добавим небольшую паузу, если нужно (зависит от скорости порта и приёмника)
+//     // delayMicroseconds(100); // настраивается по ситуации
+//   }
+// }
+
 struct Task {
   TaskHandle_t handle = NULL;
   AudioTaskConfig& cfg;
@@ -65,7 +87,7 @@ struct Buffer {
 struct RecordingControl {
   bool isRunning = false;
   bool isAutoSend = false;
-  bool isPauseAfterCallback = false;
+  bool pauseAfterCb = false;
   bool isOwnBuffer = false;
 };
 
@@ -93,14 +115,18 @@ void Task::resume() {
   //   Serial.println("AudioTask resume");
   //   vTaskResume(handle);
   // }
+
+  
   xTaskNotify(handle, START, eSetValueWithOverwrite);
   cfg.control.isRunning = true;
+
 }
 
 void Task::pause() {
   xTaskNotify(handle, STOP, eSetValueWithOverwrite);
   cfg.control.isRunning = false;
-  Serial.println("AudioTask pause");
+  Serial.println("\nAudioTask pause");
+  Serial.flush();
 
   // if (handle != NULL) {
   //   vTaskSuspend(handle);
@@ -119,8 +145,10 @@ void totalSamples(int& numSamples8, int& numSamples16) {
   decimation(buffer8, readBuffer, numSamples16);
   // shiftDown(buffer8, numSamples8);
   removeDCOffset(buffer8, numSamples8);
-  lowPassIIR(buffer8, numSamples8, 0.3);
-  increaseVolume(buffer8, numSamples8, 0.4);
+  highPassIIR(buffer8, numSamples8, 0.95); // reference record in 0.95
+  lowPassIIR(buffer8, numSamples8, 0.1); // reference record in 0.1
+  increaseVolume(buffer8, numSamples8, 0.7); // reference record in 0.7
+
 }
 
 void sendSamples(int16_t* buffer, int& numSamples8) {
@@ -148,7 +176,7 @@ void ownBuffer(int& numSamples8) {
         taskConfig.readyCallback(buffer);
       }
 
-      if (taskConfig.control.isPauseAfterCallback == false) {
+      if (taskConfig.control.pauseAfterCb) {
         taskConfig.task.pause();
       }
 
@@ -160,8 +188,8 @@ void recordTask(void* parameter) {
   uint32_t cmd = 30;
   for (;;) {
     if (xTaskNotifyWait(0, 0, &cmd, portMAX_DELAY) == pdTRUE) {
-      Serial.print("cmd.isRunning ");
-      Serial.println(cmd);
+     // Serial.print("cmd.isRunning ");
+      //Serial.println(cmd);
       const bool &isAutoSend = taskConfig.control.isAutoSend;
       const bool &isOwnBuffer = taskConfig.control.isOwnBuffer;
       const bool &is = taskConfig.buffer.is;
@@ -170,6 +198,10 @@ void recordTask(void* parameter) {
 
       if (cmd == START) {
         while (true) {
+          static unsigned long startTime = 0;
+          static unsigned long secondTime = millis();
+          startTime = micros();
+          
           size_t bytes_read = 0;
           esp_err_t result = i2s_read(I2S_NUM_0, readBuffer, READ_BUFFER_SIZE,
                                       &bytes_read, pdMS_TO_TICKS(10));
@@ -190,6 +222,13 @@ void recordTask(void* parameter) {
             if (isReadCallback == true) {
               taskConfig.readCallback(buffer8, &numSamples8);
             }
+            // if(millis() - secondTime>= 1000) {
+            //   secondTime = millis();
+            //   static int res = micros() - startTime;
+            //   Serial.print("\n\nTime: ");
+            //   Serial.println(res);
+            //   vTaskDelay(3000);
+            // }
           }
 
           if (xTaskNotifyWait(0, 0, &cmd, 0) == pdTRUE && cmd == STOP) {
@@ -203,12 +242,13 @@ void recordTask(void* parameter) {
 }
 
 RecordSound::RecordSound(gpioAdc1Channel micPin, uint16_t rate)
-    : isAutoSend(taskConfig.control.isAutoSend) {
+    : isAutoSend(taskConfig.control.isAutoSend),
+      pauseAfterCb(taskConfig.control.pauseAfterCb),
+      isRunning(taskConfig.control.isRunning) {
   this->micPin = (adc1_channel_t)micPin;
   this->rate = rate;
-  this->isRunning = &taskConfig.control.isRunning;
-  this->isPauseAfterCallback = &taskConfig.control.isPauseAfterCallback;
 
+  taskConfig.buffer = Buffer();
 }
 
 RecordSound::~RecordSound() {
@@ -227,23 +267,35 @@ void RecordSound::start(int milliseconds) {
 
     this->buffer = taskConfig.buffer.data;
   }
-  // recordingControl.isPauseAfterCallback = true;
-  // recordingControl.isAutoSend = true;
-  // recordingControl.isOwnBuffer = false;
-  // recordingControl.isRunning = true;
 
   taskConfig.buffer.is = true;
   taskConfig.task.resume();
-
-
 }
 
-void RecordSound::start() {
-  if (taskConfig.buffer.is) {
-    // disabling ownBuffer
-    Buffer buffer;
-    taskConfig.buffer = buffer;
+void RecordSound::setBuffer(int16_t* buffer, size_t numSamples) {
+    Buffer buf;
+    buf.is = true;
+    buf.data = buffer;
+    buf.size = numSamples;
+    taskConfig.buffer = buf;
+
+    // Serial.print("Size of buffer");
+    // Serial.println((long)sizeof(buffer));
+    // delay(3000);
+    //taskConfig.task.resume();
+}
+
+void RecordSound::start(bool disableBuffer) {
+  if (disableBuffer) {
+    if (taskConfig.buffer.is) {
+      // disabling ownBuffer
+      Buffer buffer;
+      taskConfig.buffer = buffer;
+    }
   }
+
+  taskConfig.buffer.index = 0;
+  taskConfig.buffer.isFull = false;
 
   taskConfig.task.resume();
 }
