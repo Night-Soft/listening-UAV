@@ -40,10 +40,10 @@ def extract_audio_segment(wav_filename, start_sec=0, duration_sec=1):
 
 # Пример использования
 start_time = 0  # начинаем с 5-й секунды
-segment = extract_audio_segment("soundUAV.wav", start_sec=start_time, duration_sec=1)
+segment = extract_audio_segment("full-reference 1.wav", start_sec=start_time, duration_sec=1)
 
 # Генерация массива для ESP32
-with open("referenceAudio.h", "w") as f:
+with open("testRef.h", "w") as f:
     f.write("#ifndef AUDIO_ARRAY\n")
     f.write("#define AUDIO_ARRAY\n\n")
     f.write("#include <Arduino.h>\n\n")

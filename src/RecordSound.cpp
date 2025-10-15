@@ -8,63 +8,21 @@
 
 #define READ_BUFFER_SIZE 2048  // 256 семплов
 
-#define STOP 0
-#define START 1
+// #define PAUSE 0
+// #define START 1
+
+enum {
+  PAUSE = 0,
+  START,
+  PAUSE_BLOCKED,
+  START_BLOCKED
+};
 
 int16_t readBuffer[READ_BUFFER_SIZE * 2];
 int16_t buffer8[READ_BUFFER_SIZE];
 struct AudioTaskConfig;  // forward declaration
 
-// ArduinoFFT<float> FFT = ArduinoFFT<float>();
-
-// float vReal[READ_BUFFER_SIZE];
-// float vImag[READ_BUFFER_SIZE];
-
-// void disD() {
-//   // Прямое FFT
-//   FFT.windowing(vReal, READ_BUFFER_SIZE, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
-//   FFT.compute(vReal, vImag, READ_BUFFER_SIZE, FFT_FORWARD);
-
-//   // Обнуление низких частот (например, <80 Гц)
-//   int cutoffIndex = 80 * READ_BUFFER_SIZE / 8000; // индекс частоты 80 Гц
-//   for (int i = 0; i < cutoffIndex; i++) {
-//     vReal[i] = 0;
-//     vImag[i] = 0;
-//   }
-
-//   // Обратное FFT
-//   FFT.compute(vReal, vImag, READ_BUFFER_SIZE, FFT_BACKWARD);
-//   FFT.complexToMagnitude(vReal, vImag, READ_BUFFER_SIZE);
-
-//   // vReal теперь содержит очищенный сигнал
-//   for (int i = 0; i < READ_BUFFER_SIZE; i++) {
-//     Serial.println(vReal[i]);
-//   }
-
-//   delay(10);
-// }
-
-//const int BUFFER_SIZE = 512;
-// const int CHUNK_SIZE = 64;
-
-// byte bigBuffer[BUFFER_SIZE];
-
-// // Пример: заполним буфер тестовыми данными
-// void fillBuffer() {
-//   for (int i = 0; i < BUFFER_SIZE; i++) {
-//     bigBuffer[i] = i % 256;
-//   }
-// }
-
-// void sendBufferInChunks() {
-//   for (int i = 0; i < BUFFER_SIZE; i += CHUNK_SIZE) {
-//     int bytesToSend = min(CHUNK_SIZE, BUFFER_SIZE - i);
-//     Serial.write(bigBuffer + i, bytesToSend);
-
-//     // ⚠️ Добавим небольшую паузу, если нужно (зависит от скорости порта и приёмника)
-//     // delayMicroseconds(100); // настраивается по ситуации
-//   }
-// }
+TaskHandle_t mainTaskHandle = NULL;
 
 struct Task {
   TaskHandle_t handle = NULL;
@@ -123,10 +81,10 @@ void Task::resume() {
 }
 
 void Task::pause() {
-  xTaskNotify(handle, STOP, eSetValueWithOverwrite);
+  xTaskNotify(handle, PAUSE, eSetValueWithOverwrite);
   cfg.control.isRunning = false;
-  Serial.println("\nAudioTask pause");
-  Serial.flush();
+  // Serial.println("\nAudioTask pause");
+  // Serial.flush();
 
   // if (handle != NULL) {
   //   vTaskSuspend(handle);
@@ -198,9 +156,9 @@ void recordTask(void* parameter) {
 
       if (cmd == START) {
         while (true) {
-          static unsigned long startTime = 0;
-          static unsigned long secondTime = millis();
-          startTime = micros();
+          // static unsigned long startTime = 0;
+          // static unsigned long secondTime = millis();
+          // startTime = micros();
           
           size_t bytes_read = 0;
           esp_err_t result = i2s_read(I2S_NUM_0, readBuffer, READ_BUFFER_SIZE,
@@ -231,10 +189,13 @@ void recordTask(void* parameter) {
             // }
           }
 
-          if (xTaskNotifyWait(0, 0, &cmd, 0) == pdTRUE && cmd == STOP) {
+          if (xTaskNotifyWait(0, 0, &cmd, 0) == pdTRUE && cmd == PAUSE) {
+            Serial.flush();
+            xTaskNotify(mainTaskHandle, PAUSE_BLOCKED, eSetValueWithOverwrite);
+            Serial.print("\n\n\n send pause_blocked");
             break;
           }
-         //vTaskDelay(1 / portTICK_PERIOD_MS);
+          vTaskDelay(pdMS_TO_TICKS(9));
         }
       }
     }
@@ -249,6 +210,7 @@ RecordSound::RecordSound(gpioAdc1Channel micPin, uint16_t rate)
   this->rate = rate;
 
   taskConfig.buffer = Buffer();
+  mainTaskHandle = xTaskGetCurrentTaskHandle();
 }
 
 RecordSound::~RecordSound() {
@@ -305,10 +267,47 @@ void RecordSound::pause() {
   taskConfig.task.pause(); 
 }
 
+void RecordSound::pauseBlocked() {
+  static uint32_t command = 0;
+
+  // ждём подтверждения, что задача остановилась
+  Serial.print("\n\n\nmainTaskHandle");
+  Serial.println((uintptr_t)mainTaskHandle);
+
+    Serial.print("\n\n\nmrecordTaskHandle");
+  Serial.println((uintptr_t)taskConfig.task.handle);
+  
+  static bool isPauseSend;
+  isPauseSend = false;
+
+  xTaskNotifyWait(0, 0, &command, 0);
+
+  while (true) {
+    //vTaskDelay(pdMS_TO_TICKS(100));
+    //Serial.print("\n\n\n in while");
+    if (xTaskNotifyWait(0, 0, &command, 0) == pdTRUE) {
+      Serial.println();
+      Serial.print("command");
+      Serial.println(command);
+      if (command == PAUSE_BLOCKED) {
+        break;
+      }
+    }
+
+    if(isPauseSend == false) {
+      taskConfig.task.pause();
+    }
+  }
+
+  delay(50);
+}
+
 void RecordSound::onReady(void (*callback)(int16_t*)) {
   taskConfig.readyCallback = callback;
 }
-
+// void RecordSound::toggleOnReady(bool enable) {
+//   taskConfig.readyCallback = callback;
+// }
 void RecordSound::onRead(void (*callback)(int16_t*, int*)) {
   taskConfig.readCallback = callback;
 }

@@ -42,6 +42,7 @@ class RecordSound {
   void setBuffer(int16_t* buffer, size_t numSamples);
   void start(bool disableBuffer = false);
   void pause();
+  void pauseBlocked();
 
   void send();
   void init();
