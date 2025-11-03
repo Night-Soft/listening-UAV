@@ -5,4 +5,6 @@ src/backup
 lib
 include
 python/*.*
+python/other
+python/wav
 !python/*.py
