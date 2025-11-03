@@ -3,6 +3,7 @@
 
 #include "sound/SoundNoises.h"
 #include "sound/utils.h"
+#include "sound/utlis-claude.h"
 
 //#include <arduinoFFT.h>
 
@@ -18,7 +19,7 @@ enum {
   START_BLOCKED
 };
 
-int16_t readBuffer[READ_BUFFER_SIZE * 2];
+int32_t readBuffer[READ_BUFFER_SIZE * 2];
 int16_t buffer8[READ_BUFFER_SIZE];
 struct AudioTaskConfig;  // forward declaration
 
@@ -98,15 +99,43 @@ void Task::pause() {
 AudioTaskConfig taskConfig;
 RecordingControl recordingControl;
 
-void totalSamples(int& numSamples8, int& numSamples16) {
-  movingAverage(readBuffer, numSamples16);
-  decimation(buffer8, readBuffer, numSamples16);
-  // shiftDown(buffer8, numSamples8);
-  removeDCOffset(buffer8, numSamples8);
-  highPassIIR(buffer8, numSamples8, 0.95); // reference record in 0.95
-  lowPassIIR(buffer8, numSamples8, 0.1); // reference record in 0.1
-  increaseVolume(buffer8, numSamples8, 0.7); // reference record in 0.7
+bool isHighIRR = false, isLowPassIIR = false, isIncreaseVolume = false; 
+float lowIIR = 0.3, highIRR = 0.9, volume = 0;
 
+
+void changeFilter(bool isLow, float value) {
+  Serial.print("\nSucces change");
+  if (isLow) {
+    Serial.print(" lowIIR ");
+    lowIIR = value;
+  } else {
+    Serial.print(" highIRR ");
+    highIRR = value;
+  }
+  Serial.print("filter: ");
+  Serial.println(value);
+}
+
+void totalSamples(int& numSamples8, int& numSamples16) {
+  // movingAverage(readBuffer, numSamples16);
+  from24To16bit(readBuffer, buffer8, numSamples16);
+  decimation2K1(buffer8, numSamples16);
+  firFilter(buffer8, numSamples8);
+  // shiftDown(buffer8, numSamples8);
+  // removeDCOffset(buffer8, numSamples8);
+  if (isHighIRR) {
+    highPassIIR(buffer8, numSamples8, highIRR); // reference record in 0.95
+  }  
+  if (isLowPassIIR) {
+    lowPassIIR(buffer8, numSamples8, lowIIR);  // reference record in 0.1
+  }
+  // applyHighPassFilter(buffer8, numSamples8);      // 2. High-pass фильтр
+  // applyDeclick(buffer8, numSamples8);             // 3. Удаляем щелчки
+  // applyNoiseGate(buffer8, numSamples8);           // 4. Noise gate
+  // applySoftClipper(buffer8, numSamples8);
+  if (volume > 0) {
+    increaseVolume(buffer8, numSamples8, volume);  // reference record in 0.7
+  }
 }
 
 void sendSamples(int16_t* buffer, int& numSamples8) {
@@ -142,19 +171,30 @@ void ownBuffer(int& numSamples8) {
   }
 }
 
+SemaphoreHandle_t xSemaphore = NULL;
+int16_t firstLast[2] = {0};
+
+bool  isTaskRun = false;
 void recordTask(void* parameter) {
   uint32_t cmd = 30;
   for (;;) {
     if (xTaskNotifyWait(0, 0, &cmd, portMAX_DELAY) == pdTRUE) {
-     // Serial.print("cmd.isRunning ");
-      //Serial.println(cmd);
+      xSemaphoreTake(xSemaphore, portMAX_DELAY);
+
+      // Serial.print("cmd.isRunning ");
+      // Serial.println(cmd);
       const bool &isAutoSend = taskConfig.control.isAutoSend;
       const bool &isOwnBuffer = taskConfig.control.isOwnBuffer;
       const bool &is = taskConfig.buffer.is;
 
       const bool isReadCallback = (taskConfig.readCallback != nullptr);
+      isTaskRun = true;
 
       if (cmd == START) {
+        memset(HISTORY, 0, sizeof(HISTORY));
+        //memset(firstLast, 0, sizeof(firstLast));
+       // bool isSetFirst = false;
+        int numSamples8 = 0;
         while (true) {
           // static unsigned long startTime = 0;
           // static unsigned long secondTime = millis();
@@ -163,14 +203,23 @@ void recordTask(void* parameter) {
           size_t bytes_read = 0;
           esp_err_t result = i2s_read(I2S_NUM_0, readBuffer, READ_BUFFER_SIZE,
                                       &bytes_read, pdMS_TO_TICKS(10));
-
+ //esp_err_t result = i2s_read(I2S_PORT, readBuffer, samples * sizeof(int32_t), &bytes_read,
           if (result == ESP_OK && bytes_read > 0) {
-            int numSamples16 = bytes_read / 2;
-            int numSamples8 = bytes_read / 4;
+            int numSamples16 = bytes_read / 4;
+            numSamples8 = numSamples16 / 2;// / 2;
+
             totalSamples(numSamples8, numSamples16);
 
             if (isAutoSend == true) {  //
+              // if (isSetFirst == false) {
+              //   firstLast[0] = buffer8[0];
+              //   isSetFirst = true;
+              // }
               sendSamples(buffer8, numSamples8);
+            } else {
+              // for (int i = 0; i < numSamples16; i++) {
+              //   Serial.println(readBuffer[i]);
+              // }
             }
 
             if (is == true) { //ownbuffer
@@ -193,12 +242,18 @@ void recordTask(void* parameter) {
             Serial.flush();
             xTaskNotify(mainTaskHandle, PAUSE_BLOCKED, eSetValueWithOverwrite);
             Serial.print("\n\n\n send pause_blocked");
+            Serial.flush();
+            firstLast[1] = buffer8[numSamples8 - 1];
+            isTaskRun = false;
+            xSemaphoreGive(xSemaphore);
             break;
           }
+          xSemaphoreGive(xSemaphore);
           vTaskDelay(pdMS_TO_TICKS(9));
         }
       }
     }
+    xSemaphoreGive(xSemaphore);
   }
 }
 
@@ -211,6 +266,9 @@ RecordSound::RecordSound(gpioAdc1Channel micPin, uint16_t rate)
 
   taskConfig.buffer = Buffer();
   mainTaskHandle = xTaskGetCurrentTaskHandle();
+
+  //initHighPassFilter(100.0);  // Срез на 100 Гц
+  //initNoiseGate(500.0);
 }
 
 RecordSound::~RecordSound() {
@@ -268,38 +326,41 @@ void RecordSound::pause() {
 }
 
 void RecordSound::pauseBlocked() {
-  static uint32_t command = 0;
+  // static uint32_t command = 0;
 
-  // ждём подтверждения, что задача остановилась
-  Serial.print("\n\n\nmainTaskHandle");
-  Serial.println((uintptr_t)mainTaskHandle);
+  // // ждём подтверждения, что задача остановилась
+  // Serial.print("\n\n\nmainTaskHandle");
+  // Serial.println((uintptr_t)mainTaskHandle);
 
-    Serial.print("\n\n\nmrecordTaskHandle");
-  Serial.println((uintptr_t)taskConfig.task.handle);
+  //   Serial.print("\n\n\nmrecordTaskHandle");
+  // Serial.println((uintptr_t)taskConfig.task.handle);
   
-  static bool isPauseSend;
-  isPauseSend = false;
+  // static bool isPauseSend;
+  // isPauseSend = false;
 
-  xTaskNotifyWait(0, 0, &command, 0);
+  // xTaskNotifyWait(0, 0, &command, 0);
+  this->pause();
 
   while (true) {
+    delay(10);
+    if (isTaskRun == false) break;
     //vTaskDelay(pdMS_TO_TICKS(100));
     //Serial.print("\n\n\n in while");
-    if (xTaskNotifyWait(0, 0, &command, 0) == pdTRUE) {
-      Serial.println();
-      Serial.print("command");
-      Serial.println(command);
-      if (command == PAUSE_BLOCKED) {
-        break;
-      }
-    }
+    // if (xTaskNotifyWait(0, 0, &command, 0) == pdTRUE) {
+    //   Serial.println();
+    //   Serial.print("command");
+    //   Serial.println(command);
+    //   if (command == PAUSE_BLOCKED) {
+    //     break;
+    //   }
+    // }
 
-    if(isPauseSend == false) {
-      taskConfig.task.pause();
-    }
+    // if(isPauseSend == false) {
+    //   taskConfig.task.pause();
+    // }
   }
 
-  delay(50);
+  //delay(50);
 }
 
 void RecordSound::onReady(void (*callback)(int16_t*)) {
@@ -328,9 +389,11 @@ void RecordSound::send() {
 }
 
 void RecordSound::enableI2S() {
-  setupADC(this->micPin);
-  setupI2S(this->micPin);
-
+ // setupADC(this->micPin);
+  //setupI2S(this->micPin);
+  setupI2S();
+xSemaphore = xSemaphoreCreateBinary();
+xSemaphoreGive(xSemaphore);
   // Создаём задачу для аудио
   xTaskCreatePinnedToCore(
       recordTask,                    // функция задачи

@@ -8,7 +8,7 @@
 #define CURRENT_AUDIO_SIZE 12288  // 8192 // 1024*8 : 24576 = 3s, 12288 = 1.536s
 #define AUDIO_RATE 8000
 
-#define IS_DEV false
+#define IS_DEV
 
 int16_t currentAudio[CURRENT_AUDIO_SIZE] = {0};
 
@@ -18,24 +18,60 @@ void ifSerialAvailable() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
+command.substring(2);
+    Serial.println("wait semafore");
+Serial.printf("Начальное значение ДВОИЧНОГО семафора: %u\n", 
+                  uxSemaphoreGetCount(xSemaphore));
+    xSemaphoreTake(xSemaphore, portMAX_DELAY);
 
-    if (command == "test") {
-      Serial.println("Запуск теста чистой частоты...");
-      Serial.println("Тест завершен. Продолжаем обычную работу.\n");
-      return;  // Пропускаем остальную обработку в этом цикле
+    Serial.println("semafore given");
+
+    Serial.flush();
+
+    if (command.startsWith("VOL")) {
+      float vol = command.substring(command.length() - 1).toFloat();
+      volume = vol;
+      if (vol == 0) {
+        Serial.println("IncreaseVolume disabled");
+      } else {
+        Serial.print("\n Volume set to: ");
+        Serial.println(volume);
+      }
     }
-    if (command == "start") {
-      record.isAutoSend = false;
-      delay(100);
 
-      Serial.println("\n\n\n try dis ena isAutosend");
-      delay(100);
+    if (command.startsWith("setLow")) {
+      bool isSet = command.substring(command.length() - 1).toInt();
+      isLowPassIIR = isSet;
+      Serial.print("\n LowPassIIR set to: ");
+      Serial.println(isSet);
+    }
+
+    if (command.startsWith("setHigh")) {
+      bool isSet = command.substring(command.length() - 1).toInt();
+      isHighIRR = isSet;
+      Serial.print("\n HighIRR set to: ");
+      Serial.println(isSet);
+    }
+
+    if (command.startsWith("LO")) {
+      float scale = command.substring(2).toFloat();
+      changeFilter(true, scale);
+    }
+
+    if (command.startsWith("HI")) {
+      float scale = command.substring(2).toFloat();
+      changeFilter(false, scale);
+    }
+
+    if (command == "start") {
+      Serial.println("\n\n\n set isAutosend to true");
       Serial.println("Record start");
       Serial.flush();
-      delay(100);
       record.isAutoSend = true;
       if (record.isRunning == false) record.start();
-      return;  // Пропускаем остальную обработку в этом циклеc
+
+      xSemaphoreGive(xSemaphore);
+      return;
     }
 
     if (command == "stop") {
@@ -43,14 +79,27 @@ void ifSerialAvailable() {
 
       static int startTime = 0;
       startTime = micros();
+     //record.pauseBlocked();
       record.pause();
       Serial.print("\n\n\nTime to stop: ");
       Serial.println(micros() - startTime);
 
-      Serial.flush();
       Serial.println("Record stop");
+      Serial.flush();
+
+      xSemaphoreGive(xSemaphore);
       return;  // Пропускаем остальную обработку в этом цикле
     }
+
+    if (command == "getFirstLast") {
+      Serial.print("\n\n\nFirstLast: ");
+      Serial.print(firstLast[0]);
+      Serial.print(", ");
+      Serial.println(firstLast[1]);
+      xSemaphoreGive(xSemaphore);
+      return;
+    }
+
     if (command == "senE") {
       record.isAutoSend = true;
       // record.pause();
@@ -63,6 +112,8 @@ void ifSerialAvailable() {
       Serial.println("Record send stop");
       return;  // Пропускаем остальную обработку в этом цикле
     }
+
+    xSemaphoreGive(xSemaphore);
   }
 }
 
@@ -73,7 +124,9 @@ void ifCanCompare() {
     delay(50);
     Serial.println("Start compare");
 
-    sendWarrningIfNeeded(fullCompare());
+    //sendWarrningIfNeeded(fullCompare());
+    //fullCompare(true);
+    fullCompareHz();
 
     delay(50);
     Serial.println("End compare");
@@ -107,22 +160,36 @@ void setupRecordToBuffer() {
   record.setBuffer(currentAudio, CURRENT_AUDIO_SIZE);
 }
 
+//#define isRecordToPC true
 void setup() {
-  Serial.begin(576000);
-  //setupSleep();
+  Serial.begin(230400);
+  // setupSleep();
 
   Serial.println("Start recording after 500ms");
   delay(500);
   record.enableI2S();
+  #ifdef isRecordToPC
 
-  setupRecordToBuffer(); // comment for record to pc
+  #else
+  setupRecordToBuffer();  // comment this for record to pc
+
+  #endif
   record.start();
+
+  delay(100);
+  if (bootCount == 1) {
+    sendWarrningIfNeeded(false, true);
+  }
 }
 
 void loop() {
+  #ifdef isRecordToPC
+   ifSerialAvailable();
+   #else
    ifCanCompare();
+   #endif
    delay(50);
- //  ifSerialAvailable();
-  //sendWarrningIfNeeded(!prevSendUAV);
+
+   //sendWarrningIfNeeded(!prevSendUAV);
   //delay(1000);
 }

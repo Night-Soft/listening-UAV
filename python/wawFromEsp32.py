@@ -2,6 +2,7 @@ import serial
 import wave
 import struct
 import sys
+import time
 from colorama import Fore, Back, Style, init
 
 # Обязательно вызовите init() для корректной работы в Windows
@@ -12,7 +13,7 @@ def printB(text):
 
 # замените порт на свой: Windows -> "COM3", Linux/Mac -> "/dev/ttyUSB0"
 PORT = "/dev/ttyUSB0"
-BAUD = 576000
+BAUD = 230400 #576000
 
 ser = serial.Serial(PORT, BAUD)
 
@@ -34,19 +35,29 @@ if len(sys.argv) > 1:
 
         except ValueError:
             printB("Invalid input: cannot convert to integer")
-
+fisrstLast = []
+isFirstSet = False
+isLastSet = False
 def writeAudio(wf):
-    global samples, ser
+    global samples, ser, fisrstLast, isFirstSet, isLastSet
     data = ser.read(2)  # читаем бинарные данные с ESP32
-    value = struct.unpack("<h", data)[0]
-    samples.append(value)
+    if isFirstSet == False:
+        value = struct.unpack("<h", data)[0]
+        fisrstLast.append(value)
+        isFirstSet = True
+
     wf.writeframes(data)
 
 def stopWriteAudio():
     global ser
     printB("Send stop")
-    ser.write(b"stop\n")  # отправляем подтверждение
     printB("Waiting stop...")
+    
+    time.sleep(0.1)
+    ser.write(b"stop\n")  # отправляем подтверждение
+    ser.flush()
+
+
 
 with wave.open("output.wav", "wb") as wf:
     wf.setnchannels(channels)
@@ -81,11 +92,30 @@ with wave.open("output.wav", "wb") as wf:
 
             # если запись активна — сохраняем данные
             if recording:
+                time.sleep(0.5)
+                ser.reset_input_buffer()
+
                 if infinityRecording == False:
+                    fisrstLast = []
+                    counter = 0
+                    seconds = 0
+                    print(Fore.YELLOW + f"\rWriting: {0}s  ", end="")
                     for i in range(num_samples):
                         writeAudio(wf)
+                        counter +=1
+                        if counter % 8000 == 0:
+                            seconds +=1
+                            print(Fore.YELLOW + f"\rWriting: {seconds}s  ", end="")
+
+                    data = ser.read(2)
+                    value = struct.unpack("<h", data)[0]
+                    fisrstLast.append(value)
+                    
+                    print(Fore.YELLOW + f"first: {fisrstLast[0]}")
+                    print(Fore.YELLOW + f"last: {fisrstLast[1]}")
 
                     recording = False
+                    print("\n");
                     stopWriteAudio()
                     continue
 
@@ -104,5 +134,5 @@ with wave.open("output.wav", "wb") as wf:
 
 
 
-with open("data uint16_t.txt", "w") as f:
-    f.write(", ".join(map(str, samples)))
+# with open("data uint16_t.txt", "w") as f:
+#     f.write(", ".join(map(str, samples)))

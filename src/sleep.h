@@ -59,10 +59,10 @@ void send () {
 }
 
 RTC_DATA_ATTR bool prevSendUAV = false;
-void sendWarrningIfNeeded(const bool& isUAV) {
-  // if (prevSendUAV == false && isUAV == false) {
-  //   return;
-  // }
+void sendWarrningIfNeeded(const bool& isUAV, bool forceSend = false) {
+  if (forceSend == false && prevSendUAV == false && isUAV == false) {
+    return;
+  }
   static char data[] = "Hello from #xx";  // строка для отправки
 
   static const char isUAWTxt[] = "isUAW";  // строка для отправки

@@ -25,19 +25,41 @@
 // #include "reference/audioSamples2.h"
 // #include "reference/uavMovesAway.h"
 
-#include "reference/startRef.h"
-#include "reference/startRef2.h"
-#include "reference/midddleRef1.h"
-#include "reference/midddleRef2.h"
-//#include "reference/awayRef.h"
+// #include "reference/startRef.h"
+// #include "reference/startRef2.h"
+// #include "reference/midddleRef1.h"
+// #include "reference/midddleRef2.h"
 
- const int16_t* reference_audio = referenceAudio1;
+//#include "reference/startRef17_10_25.h"
+#include "reference/startRef217_10_25.h"
+#include "reference/midddleRef117_10_25.h"
+#include "reference/midddleRef217_10_25.h"
+#include "reference/awayRef17_10_25.h"
+
+ const int16_t* reference_audio = referenceAudio1; // no need
 // const int16_t* reference_audio2 = referenceAudio2;
-const int16_t* refsAudio[4] = {startRef, midddleRef1,
-                               midddleRef2, startRef2};
-const char* nameReference[4] = {"startRef", "midddleRef1",
-                          "midddleRef2", "startRef2"};
+const int16_t* refsAudio[4] = {
+  startRef217_10_25, 
+  midddleRef117_10_25,       
+  midddleRef217_10_25,
+  awayRef17_10_25
+};// startRef2
+
+const char* nameReference[4] = {
+  "startRef17_10_25", 
+  "midddleRef117_10_25",
+  "midddleRef217_10_25", 
+  "awayRef17_10_25"
+};
+
 int16_t* current_audio = nullptr;
+
+const int16_t* hzRanges[4] = {
+    hzRange_startRef217_10_25,
+    hzRange_midddleRef117_10_25,
+    hzRange_midddleRef217_10_25,
+    hzRange_awayRef17_10_25,
+};
 
 // Массивы для FFT (double для лучшей точности)
 double vReal_ref[FFT_SIZE];
@@ -50,8 +72,8 @@ double reference_spectrum[NUM_BINS];
 double current_spectrum[NUM_BINS];
 
 // Создание объекта FFT
-ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal_ref, vImag_ref, FFT_SIZE, SAMPLE_RATE);
-
+//ArduinoFFT<double> FFT = ArduinoFFT<double>(vReal_ref, vImag_ref, FFT_SIZE, SAMPLE_RATE);
+ArduinoFFT<double> FFT = ArduinoFFT<double>();
 // ============================================
 // СТРУКТУРЫ ДАННЫХ
 // ============================================
@@ -91,26 +113,26 @@ struct SpectrumAnalysis {
 // ВЫЧИСЛЕНИЕ СПЕКТРА С ПОМОЩЬЮ arduinoFFT
 // ============================================
 
-void computeSpectrum(const int16_t* audio, int audio_length, double* vReal, double* vImag, double* spectrum) {
+void computeSpectrum(const int16_t* audio, int audio_length, double* vReal_cur, double* vImag_cur, double* spectrum) {
     // Шаг 1: Очистка массивов
     for (int i = 0; i < FFT_SIZE; i++) {
-        vImag[i] = 0.0;
+        vImag_cur[i] = 0.0;
     }
     
     // Шаг 2: Копирование и нормализация данных
     int samples_to_use = min(audio_length, FFT_SIZE);
     for (int i = 0; i < samples_to_use; i++) {
-        vReal[i] = audio[i] / 32768.0;  // Нормализация к [-1, 1]
+        vReal_cur[i] = audio[i] / 32768.0;  // Нормализация к [-1, 1]
     }
     
     // Заполняем остальное нулями (zero-padding)
     for (int i = samples_to_use; i < FFT_SIZE; i++) {
-        vReal[i] = 0.0;
+        vReal_cur[i] = 0.0;
     }
     
     // Шаг 3: Применение оконной функции Хэмминга
     // arduinoFFT поддерживает несколько типов окон
-    ArduinoFFT<double> fft_temp = ArduinoFFT<double>(vReal, vImag, FFT_SIZE, SAMPLE_RATE);
+    ArduinoFFT<double> fft_temp = ArduinoFFT<double>(vReal_cur, vImag_cur, FFT_SIZE, SAMPLE_RATE);
     fft_temp.windowing(FFTWindow::Hamming, FFTDirection::Forward);
     
     // Шаг 4: Выполнение FFT
@@ -121,9 +143,24 @@ void computeSpectrum(const int16_t* audio, int audio_length, double* vReal, doub
     
     // Шаг 6: Копирование результата в спектр
     // Используем только первую половину (до частоты Найквиста)
+    // for (int i = 0; i < NUM_BINS; i++) {
+    //     spectrum[i] = vReal_cur[i];
+    // }
+
+    // below can remove, uncoment above
+    float hzInOneSample = SAMPLE_RATE / FFT_SIZE;  // 7,8125
+
+    double energy = 0;
+    int binStart = floor(400 / hzInOneSample);
+    int binEnd = 1500;
     for (int i = 0; i < NUM_BINS; i++) {
-        spectrum[i] = vReal[i];
+      if (i>=binStart && i<= binEnd) {
+        spectrum[i] = vReal_cur[i];
+        continue;
+      }
+        spectrum[i] = 0;
     }
+
 }
 
 // Альтернативная функция для вычисления обоих спектров
@@ -162,17 +199,17 @@ void computeBothSpectrums() {
 // }
 
 // Использование arduinoFFT для поиска доминантной частоты
-PeakInfo findPeakUsingArduinoFFT(double* vReal) {
+PeakInfo findPeakUsingArduinoFFT(double* vReal_cur) {
     PeakInfo peak;
     
     // arduinoFFT имеет встроенную функцию для поиска пика
-    ArduinoFFT<double> fft_temp = ArduinoFFT<double>(vReal, vImag_ref, FFT_SIZE, SAMPLE_RATE);
+    ArduinoFFT<double> fft_temp = ArduinoFFT<double>(vReal_cur, vImag_ref, FFT_SIZE, SAMPLE_RATE);
     peak.frequency = fft_temp.majorPeak();
     
     // Находим магнитуду и индекс
     double freq_resolution = (double)SAMPLE_RATE / FFT_SIZE;
     peak.bin_index = (int)(peak.frequency / freq_resolution);
-    peak.magnitude = vReal[peak.bin_index];
+    peak.magnitude = vReal_cur[peak.bin_index];
     
     return peak;
 }
@@ -296,15 +333,15 @@ double comparePeaks(PeakInfo p1, PeakInfo p2) {
 // ГЛАВНАЯ ФУНКЦИЯ АНАЛИЗА
 // ============================================
 
-SpectrumAnalysis analyzeSpectrums() {
-    SpectrumAnalysis result = {0};
+SpectrumAnalysis analyzeSpectrums(SpectrumAnalysis &result) {
+    //SpectrumAnalysis result = {0};
     
     Serial.println("\n╔════════════════════════════════════════╗");
     Serial.println("║   СПЕКТРАЛЬНЫЙ АНАЛИЗ (arduinoFFT)     ║");
     Serial.println("╚════════════════════════════════════════╝\n");
     
     // Вычисление спектров
-    computeBothSpectrums();
+   // computeBothSpectrums();
     
     // 1. Косинусное сходство
     result.cosine_similarity = cosineSimilarity(reference_spectrum, current_spectrum, NUM_BINS);
@@ -491,92 +528,92 @@ void benchmarkFFT() {
 // SETUP И LOOP
 // ============================================
 
-void compareFFT() {
-    // Serial.begin(115200);
-    // delay(2000);
+// void compareFFT() {
+//     // Serial.begin(115200);
+//     // delay(2000);
     
-    // Serial.println("\n\n");
-    // Serial.println("╔════════════════════════════════════════╗");
-    // Serial.println("║  СПЕКТРАЛЬНОЕ СРАВНЕНИЕ АУДИО         ║");
-    // Serial.println("║  с использованием arduinoFFT          ║");
-    // Serial.println("╚════════════════════════════════════════╝");
-    // Serial.printf("\nCPU: ESP32 @ %d MHz\n", getCpuFrequencyMhz());
-    // Serial.printf("Свободная память: %d байт (%.1f KB)\n", 
-    //               ESP.getFreeHeap(), ESP.getFreeHeap()/1024.0);
+//     // Serial.println("\n\n");
+//     // Serial.println("╔════════════════════════════════════════╗");
+//     // Serial.println("║  СПЕКТРАЛЬНОЕ СРАВНЕНИЕ АУДИО         ║");
+//     // Serial.println("║  с использованием arduinoFFT          ║");
+//     // Serial.println("╚════════════════════════════════════════╝");
+//     // Serial.printf("\nCPU: ESP32 @ %d MHz\n", getCpuFrequencyMhz());
+//     // Serial.printf("Свободная память: %d байт (%.1f KB)\n", 
+//     //               ESP.getFreeHeap(), ESP.getFreeHeap()/1024.0);
     
-    // // Генерация тестовых данных
-    // Serial.println("\nГенерация тестовых сигналов...");
-    // Serial.println("Эталон: Двигатель 100 Hz + гармоники");
-    // Serial.println("Текущий: Похожий сигнал с вариациями\n");
+//     // // Генерация тестовых данных
+//     // Serial.println("\nГенерация тестовых сигналов...");
+//     // Serial.println("Эталон: Двигатель 100 Hz + гармоники");
+//     // Serial.println("Текущий: Похожий сигнал с вариациями\n");
     
-    // for (int i = 0; i < REFERENCE_SIZE; i++) {
-    //     double t = i / (double)SAMPLE_RATE;
+//     // for (int i = 0; i < REFERENCE_SIZE; i++) {
+//     //     double t = i / (double)SAMPLE_RATE;
         
-    //     // Эталонный сигнал: двигатель на 100 Hz
-    //     double ref_signal = 
-    //         sin(2 * PI * 100 * t) * 10000 +      // Основная частота
-    //         sin(2 * PI * 200 * t) * 5000 +       // 2-я гармоника
-    //         sin(2 * PI * 300 * t) * 2500 +       // 3-я гармоника
-    //         sin(2 * PI * 400 * t) * 1000 +       // 4-я гармоника
-    //         (random(-300, 300));                  // Шум
+//     //     // Эталонный сигнал: двигатель на 100 Hz
+//     //     double ref_signal = 
+//     //         sin(2 * PI * 100 * t) * 10000 +      // Основная частота
+//     //         sin(2 * PI * 200 * t) * 5000 +       // 2-я гармоника
+//     //         sin(2 * PI * 300 * t) * 2500 +       // 3-я гармоника
+//     //         sin(2 * PI * 400 * t) * 1000 +       // 4-я гармоника
+//     //         (random(-300, 300));                  // Шум
         
-    //     // Текущий сигнал: немного выше обороты + больше шума
-    //     double cur_signal = 
-    //         sin(2 * PI * 105 * t) * 9500 +       // Чуть выше частота
-    //         sin(2 * PI * 210 * t) * 4800 +       
-    //         sin(2 * PI * 315 * t) * 2400 +       
-    //         sin(2 * PI * 420 * t) * 950 +        
-    //         (random(-400, 400));                  // Больше шума
+//     //     // Текущий сигнал: немного выше обороты + больше шума
+//     //     double cur_signal = 
+//     //         sin(2 * PI * 105 * t) * 9500 +       // Чуть выше частота
+//     //         sin(2 * PI * 210 * t) * 4800 +       
+//     //         sin(2 * PI * 315 * t) * 2400 +       
+//     //         sin(2 * PI * 420 * t) * 950 +        
+//     //         (random(-400, 400));                  // Больше шума
         
-    //     reference_audio[i] = (int16_t)ref_signal;
-    //     current_audio[i] = (int16_t)cur_signal;
-    // }
+//     //     reference_audio[i] = (int16_t)ref_signal;
+//     //     current_audio[i] = (int16_t)cur_signal;
+//     // }
     
-    // delay(1000);
+//     // delay(1000);
     
-    // Запуск бенчмарка
-    //benchmarkFFT();
+//     // Запуск бенчмарка
+//     //benchmarkFFT();
     
-    // Выполнение анализа
-    SpectrumAnalysis result = analyzeSpectrums();
+//     // Выполнение анализа
+//     SpectrumAnalysis result = analyzeSpectrums();
     
-    // Визуализация спектров
-   // printSpectrumGraph(reference_spectrum, "ЭТАЛОННЫЙ СПЕКТР");
-    //printSpectrumGraph(current_spectrum, "ТЕКУЩИЙ СПЕКТР");
+//     // Визуализация спектров
+//    // printSpectrumGraph(reference_spectrum, "ЭТАЛОННЫЙ СПЕКТР");
+//     //printSpectrumGraph(current_spectrum, "ТЕКУЩИЙ СПЕКТР");
     
-    // Интерпретация результата
-    Serial.println("═══════════════════════════════════════════════════");
-    Serial.println("ИНТЕРПРЕТАЦИЯ РЕЗУЛЬТАТОВ:");
-    Serial.println("═══════════════════════════════════════════════════");
+//     // Интерпретация результата
+//     Serial.println("═══════════════════════════════════════════════════");
+//     Serial.println("ИНТЕРПРЕТАЦИЯ РЕЗУЛЬТАТОВ:");
+//     Serial.println("═══════════════════════════════════════════════════");
     
-    if (result.is_similar) {
-        Serial.println("✓ ЗВУК ПОХОЖ НА ЭТАЛОННЫЙ ДВИГАТЕЛЬ");
+//     if (result.is_similar) {
+//         Serial.println("✓ ЗВУК ПОХОЖ НА ЭТАЛОННЫЙ ДВИГАТЕЛЬ");
         
-        if (abs(result.ref_peak.frequency - result.cur_peak.frequency) > 10) {
-            double rpm_diff = (result.cur_peak.frequency - result.ref_peak.frequency) / 
-                            result.ref_peak.frequency * 100;
-            Serial.printf("  → Обороты изменились на %.1f%%\n", rpm_diff);
-        }
+//         if (abs(result.ref_peak.frequency - result.cur_peak.frequency) > 10) {
+//             double rpm_diff = (result.cur_peak.frequency - result.ref_peak.frequency) / 
+//                             result.ref_peak.frequency * 100;
+//             Serial.printf("  → Обороты изменились на %.1f%%\n", rpm_diff);
+//         }
         
-        if (result.cur_bands.high / (result.cur_bands.low + 0.001) > 
-            result.ref_bands.high / (result.ref_bands.low + 0.001) * 1.5) {
-            Serial.println("  ⚠ Увеличился уровень высокочастотного шума");
-        }
-    } else {
-        Serial.println("✗ ЗВУК НЕ СООТВЕТСТВУЕТ ЭТАЛОНУ");
+//         if (result.cur_bands.high / (result.cur_bands.low + 0.001) > 
+//             result.ref_bands.high / (result.ref_bands.low + 0.001) * 1.5) {
+//             Serial.println("  ⚠ Увеличился уровень высокочастотного шума");
+//         }
+//     } else {
+//         Serial.println("✗ ЗВУК НЕ СООТВЕТСТВУЕТ ЭТАЛОНУ");
         
-        if (result.cosine_similarity < 0.5) {
-            Serial.println("  → Совершенно другая частотная структура");
-        } else if (result.peak_similarity < 0.6) {
-            Serial.println("  → Основная частота сильно отличается");
-        } else if (result.band_similarity < 0.6) {
-            Serial.println("  → Нарушено распределение энергии по частотам");
-        }
-    }
+//         if (result.cosine_similarity < 0.5) {
+//             Serial.println("  → Совершенно другая частотная структура");
+//         } else if (result.peak_similarity < 0.6) {
+//             Serial.println("  → Основная частота сильно отличается");
+//         } else if (result.band_similarity < 0.6) {
+//             Serial.println("  → Нарушено распределение энергии по частотам");
+//         }
+//     }
     
-    Serial.println("═══════════════════════════════════════════════════\n");
-    Serial.println("✓ Анализ завершён!");
-}
+//     Serial.println("═══════════════════════════════════════════════════\n");
+//     Serial.println("✓ Анализ завершён!");
+// }
 
 void printResult(SpectrumAnalysis &result) {
         // Интерпретация результата
@@ -657,7 +694,7 @@ SpectrumAnalysis getResult() {
     ) * 100.0;
     
     // 7. Определение похожести
-    result.is_similar = (result.overall_score > 70.0); // && (result.cosine_similarity > 0.65);
+    result.is_similar = (result.overall_score >= 73.0); // && (result.cosine_similarity > 0.65);
     
     return result;
 }
@@ -688,7 +725,7 @@ SpectrumAnalysis getFinalResult(SpectrumAnalysis& prevScore,
   finalResult.cur_centroid =
       (prevScore.cur_centroid + prevCosine.cur_centroid) / 2;
 
-  finalResult.is_similar = (finalResult.overall_score > 70.0); // && (finalResult.cosine_similarity > 0.65);
+  finalResult.is_similar = (finalResult.overall_score >= 73.0); // && (finalResult.cosine_similarity > 0.65);
 
   return finalResult;
 }
@@ -698,14 +735,15 @@ bool fullCompare() {
 
   unsigned long start = micros();
   uint8_t index = 0;
-  for (uint8_t k = 0; k < 4; k++) {
+  bool stop = false;
+  for (uint8_t k = 0; k < 4 && !stop; k++) {
     const int16_t* ref = refsAudio[k];
     
     Serial.print("\nCompare: ");
     Serial.print(nameReference[k]);
-    Serial.println(k);
+    //Serial.println(k);
 
-    for (uint8_t i = 0; i < REFERENCE_SIZE / FFT_SIZE; i++) {
+    for (uint8_t i = 0; i < REFERENCE_SIZE / FFT_SIZE && !stop; i++) {
       computeSpectrum(&ref[i * FFT_SIZE], FFT_SIZE, vReal_ref, vImag_ref,
                       reference_spectrum);
 
@@ -725,10 +763,12 @@ bool fullCompare() {
         if (currentResult.cosine_similarity > prevCosine.cosine_similarity) {
           prevCosine = currentResult;
         }
-        if (currentResult.is_similar) {
-          //return true;
-           break;
-        }
+        // if (currentResult.is_similar) {
+        //   //return true;
+        //   Serial.println("Break");
+        //   stop = true;
+        //   break;
+        // }
       }
     }
   }
@@ -737,6 +777,7 @@ bool fullCompare() {
 
   // Вывод результата
   Serial.println("════════════════════════════════════════");
+  Serial.println("result");
 
   Serial.printf(">>> ИТОГОВАЯ ОЦЕНКА: %.1f%%\n", finalResult.overall_score);
   Serial.printf(">>> COSINE_SIMILARITY: %.1f%%\n",
@@ -746,10 +787,288 @@ bool fullCompare() {
                 finalResult.is_similar ? "✓" : "✗");
   Serial.println("════════════════════════════════════════\n");
 
-  printResult(finalResult);
-
+  //printResult(finalResult);
+  analyzeSpectrums(finalResult);
   unsigned long elapsed = micros() - start;
   Serial.printf("Время вычисления FFT: %lu мкс (%.2f мс)\n", elapsed,
                 elapsed / 1000.0);
   return finalResult.is_similar;
+}
+
+
+//next compare
+
+
+bool newComapre() {
+
+    return true;
+}
+
+float getDiffCompare() {
+  // --- Сравнение спектров ---
+  double diff = 0;
+  for (int i = 0; i < FFT_SIZE / 2; i++) {
+    double d = vReal_ref[i] - vReal_cur[i];
+    diff += d * d;
+  }
+  diff = sqrt(diff / (FFT_SIZE / 2));
+
+  // avgSpectrum[i] = (spec1[i] + spec2[i] + spec3[i]) / 3.0;
+
+  // Нормируем результат (0 = идеально, выше = хуже)
+  return (float)diff;
+}
+
+
+void createSpecRef(const int16_t * samples) {
+  for (int i = 0; i < FFT_SIZE; i++) {
+    vReal_ref[i] = samples[i] / 32768.0;  // Нормализация к [-1, 1]
+    vImag_ref[i] = 0;
+  }
+ 
+  FFT.windowing(vReal_ref, FFT_SIZE, FFT_WIN_TYP_BLACKMAN, FFT_FORWARD);
+  FFT.compute(vReal_ref, vImag_ref, FFT_SIZE, FFT_FORWARD);
+  FFT.complexToMagnitude(vReal_ref, vImag_ref, FFT_SIZE);
+}
+
+void createSpecMic(const int16_t * samples) {
+  for (int i = 0; i < FFT_SIZE; i++) {
+    vReal_cur[i] = samples[i] / 32768.0;  // Нормализация к [-1, 1]
+    vImag_cur[i] = 0;
+  }
+
+  FFT.windowing(vReal_cur, FFT_SIZE, FFT_WIN_TYP_BLACKMAN, FFT_FORWARD);
+  FFT.compute(vReal_cur, vImag_cur, FFT_SIZE, FFT_FORWARD);
+  FFT.complexToMagnitude(vReal_cur, vImag_cur, FFT_SIZE);
+}
+
+bool fullCompare(bool ts) {
+  static float results[192] = {};
+  unsigned long start = micros();
+  uint8_t index = 0;
+  bool stop = false;
+  for (uint8_t k = 0; k < 4 && !stop; k++) {
+    const int16_t* ref = refsAudio[k];
+    
+    Serial.print("\nCompare: ");
+    Serial.print(nameReference[k]);
+    Serial.println(k);
+
+    for (uint8_t i = 0; i < REFERENCE_SIZE / FFT_SIZE && !stop; i++) {
+      createSpecRef(&ref[i * FFT_SIZE]);
+
+      for (uint8_t j = 0; j < CURRENT_AUDIO_SIZE / FFT_SIZE; j++) {
+        createSpecMic(&current_audio[j * FFT_SIZE]);
+        float result = getDiffCompare();
+        results[index++] = result;
+      }
+    }
+  }
+
+  // Вывод результата
+  Serial.println("════════════════════════════════════════");
+
+  for (uint8_t i = 0; i < index; i++) {
+    Serial.println(results[i]);
+  }
+
+  Serial.println("════════════════════════════════════════\n");
+
+
+  unsigned long elapsed = micros() - start;
+  Serial.printf("Время вычисления FFT: %lu мкс (%.2f мс)\n", elapsed,
+                elapsed / 1000.0);
+  return true;
+}
+
+
+
+
+#define NUM_WINDOWS 4
+#define SAMPLING_FREQ 8000
+
+
+// Функция вычисления энергии двигателя в диапазоне 150-1600 Гц
+float computeEngineEnergy(const int16_t* samples, const int16_t* hzRange) {
+  double avgSpectrum[FFT_SIZE / 2] = {0};
+
+
+  for (int w = 0; w < NUM_WINDOWS; w++) {
+    int start = w * FFT_SIZE; // без перекрытия
+    // Подготовка данных и нормализация
+    for (int i = 0; i < FFT_SIZE; i++) {
+      vReal_cur[i] = (double)samples[start + i] / 32768.0; 
+      vImag_cur[i] = 0.0;
+    }
+
+    // Окно Хэмминга + FFT
+    FFT.windowing(vReal_cur, FFT_SIZE, FFT_WIN_TYP_BLACKMAN, FFT_FORWARD);
+    FFT.compute(vReal_cur, vImag_cur, FFT_SIZE, FFT_FORWARD);
+    FFT.complexToMagnitude(vReal_cur, vImag_cur, FFT_SIZE);
+
+    // Усреднение
+    //static bool isPrint = false;
+    for (int i = 0; i < FFT_SIZE / 2; i++) {
+      //float currentEnergy = vReal_cur[i];
+      // if (currentEnergy > 3 && currentEnergy < 5) {
+      //   avgSpectrum[i] += currentEnergy;
+      //   continue;
+      // }
+      // if (currentEnergy < 1) {
+      //   avgSpectrum[i] += currentEnergy * 0.3;
+      //   continue;
+      // }
+
+      // if (currentEnergy < 2) {
+      //   avgSpectrum[i] += currentEnergy * 0.6;
+      //   continue;
+      // }
+
+      // if (currentEnergy < 3) {
+      //   avgSpectrum[i] += currentEnergy * 0.9;
+      //   continue;
+      // }
+
+      // if (currentEnergy > 10) {
+      //   avgSpectrum[i] += currentEnergy;
+      //   continue;
+      // }
+      // if (currentEnergy > 7.5) {
+      //   avgSpectrum[i] += currentEnergy * 1.6;
+      //   continue;
+      // }
+      // if (currentEnergy > 5) {
+      //   avgSpectrum[i] += currentEnergy * 1.3;
+      //   continue;
+      // }
+
+      avgSpectrum[i] += vReal_cur[i];
+    }
+
+    // if (isPrint == false) {
+    //   for (int i = 0; i < FFT_SIZE / 2; i++) {
+    //     double amplitude = vReal_cur[i];  // амплитуда частоты i
+    //     double amplitude_dB =
+    //         20.0 * log10(amplitude / 1.0 + 1e-9);  // +1e-9 чтобы не было log(0)
+    //     Serial.printf("%d Гц = %.2f dB ",
+    //                   (int)(i * (SAMPLING_FREQ / (double)FFT_SIZE)),
+    //                   amplitude_dB);
+    //                   Serial.println(vReal_cur[i]);
+    //   }
+    // }
+
+    // isPrint = true;
+  }
+
+  // Делим на количество окон
+  for (int i = 0; i < FFT_SIZE / 2; i++) {
+    avgSpectrum[i] /= NUM_WINDOWS;
+  }
+
+
+  float hzInOneSample = SAMPLE_RATE / FFT_SIZE; // 7,8125
+
+  double energy = 0;
+
+  for (uint8_t i = 0; i < 2; i++) {
+    int binStart = floor(hzRange[i] / hzInOneSample) - 1;
+    int binEnd = binStart + 6;
+    for (int i = binStart; i < binEnd; i++) {
+
+      energy += avgSpectrum[i] * avgSpectrum[i];
+    }
+  }
+//Serial.println(energy);
+  return sqrt(energy);
+}
+
+float compareEngineSound(float &energyRef, float &energyMic) {
+  float diff = fabs(energyRef - energyMic) / energyRef; // нормированная разница
+  return diff;
+}
+
+
+float compareEngineSoundInt(float &energyRef, float &energyMic) {
+  if (energyRef == 0) return 0; // защита от деления на ноль
+  float diff = fabs(energyRef - energyMic) / energyRef;
+  float similarity = fabs((1.0f - diff) * 100.0f);
+  //float diff = fabs((energyRef - energyMic) * 100 / energyRef);
+ // float similarity = (1.0f - diff) * 100.0f; // переводим в проценты
+  Serial.println(similarity);
+
+  if (similarity > 200) similarity = 0;
+  if (similarity > 100) similarity = 100 - (similarity - 100);
+
+  return similarity;
+}
+
+// 330-1460
+bool fullCompareHz() {
+  static float results[192] = {};
+  static float resultsInt[192] = {};
+  unsigned long start = micros();
+  uint8_t index = 0;
+  bool stop = false;
+  for (uint8_t k = 0; k < 4 && !stop; k++) {
+    const int16_t* ref = refsAudio[k];
+    const int16_t* hzRange = hzRanges[k];
+
+    Serial.print("\nCompare: ");
+    Serial.print(nameReference[k]);
+    Serial.println(k);
+
+    float energyRef = computeEngineEnergy(ref, hzRange);
+    
+    for (uint8_t j = 0; j < CURRENT_AUDIO_SIZE / 4096; j++) {
+      const int16_t * mic = &current_audio[j * FFT_SIZE];
+      float energyMic = computeEngineEnergy(mic, hzRange);
+
+      float resultInt = compareEngineSoundInt(energyRef, energyMic);
+      float result = compareEngineSound(energyRef, energyMic);
+      results[index] = result;
+      resultsInt[index] = resultInt;
+      index++;
+    }
+  }
+
+  // Вывод результата
+  Serial.println("\n════════════════════════════════════════\n");
+  uint8_t indexName = 0;
+  for (uint8_t i = 0; i < index; i++) {
+    if (i % 3 == 0) {
+      Serial.print("════");
+      Serial.print(nameReference[indexName++]);
+      float isSimularuty =
+          (resultsInt[i] + resultsInt[i + 1] + resultsInt[i + 2]) / 3;
+      if (isSimularuty > 74) {
+        Serial.print("   ✓ ПОХОЖ ");
+      } else {
+        Serial.print("   ✗ ЗВУК НЕ ПОХОЖ ");
+      }
+        Serial.print(isSimularuty);
+        Serial.print("%   ");
+
+      Serial.println("════");
+    }
+    Serial.print(results[i]);
+    Serial.print(", ");
+    Serial.print(resultsInt[i]);
+    Serial.println("%");
+  }
+
+//   Результат diff показывает отличие в спектральной энергии:
+
+// 0.0 → идеально совпадает
+
+// 0.1–0.2 → похоже
+
+// >0.3 → звук заметно другой (например, неисправность)
+
+  Serial.println("════════════════════════════════════════\n");
+
+
+  unsigned long elapsed = micros() - start;
+  Serial.printf("Время вычисления FFT: %lu мкс (%.2f мс)\n", elapsed,
+                elapsed / 1000.0);
+  return true;
 }

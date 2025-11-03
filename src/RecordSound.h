@@ -6,6 +6,13 @@
 
 #include "sound/I2S_ADC.h"
 
+extern SemaphoreHandle_t xSemaphore;
+extern int16_t firstLast[2];
+
+extern bool isHighIRR, isLowPassIIR, isIncreaseVolume;
+extern float lowIIR, highIRR, volume;
+extern void changeFilter(bool isLow = true, float value = 0);
+
 typedef enum {
   GPIO36_ADC1 = ADC1_CHANNEL_0, /*!< GPIO36 is ADC1 channel 0 */
   GPIO37_ADC1 = ADC1_CHANNEL_1, /*!< GPIO37 is ADC1 channel 1 */

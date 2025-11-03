@@ -1,7 +1,12 @@
 import wave
 import struct
 
-def extractSegment(wawFilename, startSmp=0, count=1024, numSamples=4, distanceBtwSampl=1024): #128ms = 1024samples
+def extractSegment(
+        wawFilename,
+        startSmp=0,
+        count=1024, 
+        numSamples=4, 
+        distanceBtwSampl=1024): #128ms = 1024samples
     # Открываем WAV
     wav_file = wave.open(wawFilename, "rb")
 
@@ -32,23 +37,36 @@ def extractSegment(wawFilename, startSmp=0, count=1024, numSamples=4, distanceBt
     return samples
 
 pathPython = "/home/User/Documents/PlatformIO/Projects/Listening UAV/python/"
+pathWav = "/home/User/Documents/PlatformIO/Projects/Listening UAV/python/wav/"
 pathSrc = "/home/User/Documents/PlatformIO/Projects/Listening UAV/src/reference/"
 
-def createFile(samples, varName = "test"):
+def createFile(samples, varName = "test", hzRange=[445], js=False):
     global pathSrc
-    outFile = f"{pathSrc}{varName}.h"
     define = createDefine(varName)
 
-    with open(outFile, "w") as f:
-        f.write(f"#ifndef {define}\n")
-        f.write(f"#define {define}\n\n")
-        f.write("#include <Arduino.h>\n\n")
+    outFile = ""
+    if js == True:
+        outFile = f"{pathSrc}{varName}.js"
+        with open(outFile, "w") as f:
+            f.write(f"const {varName} = [")
+            f.write(", ".join(map(str, samples)))
+            f.write("];\n")
+    else:
+        outFile = f"{pathSrc}{varName}.h"
+        with open(outFile, "w") as f:
+            f.write(f"#ifndef {define}\n")
+            f.write(f"#define {define}\n\n")
+            f.write("#include <Arduino.h>\n\n")
 
-        f.write(f"const int16_t {varName}[{len(samples)}] = {{")
+            f.write(f"const int16_t {varName}[{len(samples)}] = {{")
+            f.write(", ".join(map(str, samples)))
+            f.write("};\n")
 
-        f.write(", ".join(map(str, samples)))
-        f.write("};\n\n")
-        f.write("#endif\n")
+            f.write(f"const int16_t hzRange_{varName}[{len(hzRange)}] = {{")
+            f.write(", ".join(map(str, hzRange)))
+            f.write("};\n")
+
+            f.write("\n#endif\n")
 
     print(f"✅ Создан файл {outFile} с {len(samples)} значениями")
 
@@ -67,7 +85,7 @@ def createDefine(name = "tEstAud"):
 
 def createSamplesH(
         inFile, startPos=0, count=1024, numSamples=4,
-        distanceBtwSampl=3072, varName="referenceAudio"
+        distanceBtwSampl=3072, varName="referenceAudio",hzRange=[445], js=False
         ):
     
     samples = extractSegment(
@@ -77,76 +95,62 @@ def createSamplesH(
         numSamples=numSamples,
         distanceBtwSampl=distanceBtwSampl
         )
-    createFile(samples, varName)
+    createFile(samples, varName, hzRange, js)
 
-# createSamplesH(
-#     f"{pathPython}output full new.wav",
-#     varName="startRef",
-#     startPos=793920,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=4096
-# )
-
-# createSamplesH(
-#     f"{pathPython}output full new.wav",
-#     varName="midddleRef1",
-#     startPos=1188000,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=4096
-# )
-
-# createSamplesH(
-#     f"{pathPython}output full new.wav",
-#     varName="midddleRef2",
-#     startPos=3548160,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=12096
-# )
-
-# createSamplesH(
-#     f"{pathPython}output full new.wav",
-#     varName="awayRef",
-#     startPos=6739968,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=20096
-# )
-
-# createSamplesH(
-#     f"{pathPython}output full new.wav",
-#     varName="awayRef2",
-#     startPos=6641600,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=8000
-# )
-
-# createSamplesH(
-#     f"{pathPython}full-reference 3-4.wav",
-#     varName="awayRef",
-#     startPos=747000,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=5120
-# )
-
-# createSamplesH(
-#     f"{pathPython}full-reference 3-4.wav",
-#     varName="awayRef",
-#     startPos=74740,
-#     count=1024,
-#     numSamples=4,
-#     distanceBtwSampl=5120
-# )
-
+# fileName = "output01.11.25.wav"
+fileName = "output 04.11.25.wav"
 createSamplesH(
-    f"{pathPython}full-reference 3-4.wav",
-    varName="startRef2",
-    startPos=481600,
+    f"{pathPython}{fileName}",
+    varName="startRef217_10_25",
+    startPos=95520,
     count=1024,
     numSamples=4,
-    distanceBtwSampl=5120
+    distanceBtwSampl=0,
+    hzRange = [670, 1500]
 )
+
+createSamplesH(
+    f"{pathPython}{fileName}",
+    varName="midddleRef117_10_25",
+    startPos=236400,
+    count=1024,
+    numSamples=4,
+    distanceBtwSampl=0,
+    hzRange = [640, 1500]
+)
+
+createSamplesH(
+    f"{pathPython}{fileName}",
+    varName="midddleRef217_10_25",
+    startPos=546948,
+    count=1024,
+    numSamples=4,
+    distanceBtwSampl=0,
+    hzRange = [400, 1500]
+)
+
+createSamplesH(
+    f"{pathPython}{fileName}",
+    varName="awayRef17_10_25",
+    startPos=507408,
+    count=1024,
+    numSamples=4,
+    distanceBtwSampl=0,
+    hzRange = [470, 1360]
+
+)
+
+# js
+
+# pathSrc = pathPython
+# noiseSilence = 'noise silence.wav'
+# createSamplesH(
+#     f"{pathWav}{noiseSilence}",
+#     varName="noiseSilence",
+#     startPos=0,
+#     count=40000,
+#     numSamples=1,
+#     distanceBtwSampl=0,
+#     js=True,
+#     hzRange = [0, 4000]
+# )
