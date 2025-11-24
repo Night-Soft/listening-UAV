@@ -13,7 +13,7 @@
 // Параметры аудио
 #define SAMPLE_RATE 8000
 
-#define CURRENT_AUDIO_SIZE 12288 // 1024*8
+#define CURRENT_AUDIO_SIZE 16384 // 1024*8
 #define REFERENCE_SIZE 4096
 
 #define FFT_SIZE 1024        // Должно быть степенью 2
@@ -807,11 +807,11 @@ bool newComapre() {
 float getDiffCompare() {
   // --- Сравнение спектров ---
   double diff = 0;
-  for (int i = 0; i < FFT_SIZE / 2; i++) {
+  for (int i = 0; i < NUM_BINS; i++) {
     double d = vReal_ref[i] - vReal_cur[i];
     diff += d * d;
   }
-  diff = sqrt(diff / (FFT_SIZE / 2));
+  diff = sqrt(diff / (NUM_BINS));
 
   // avgSpectrum[i] = (spec1[i] + spec2[i] + spec3[i]) / 3.0;
 
@@ -829,6 +829,37 @@ void createSpecRef(const int16_t * samples) {
   FFT.windowing(vReal_ref, FFT_SIZE, FFT_WIN_TYP_BLACKMAN, FFT_FORWARD);
   FFT.compute(vReal_ref, vImag_ref, FFT_SIZE, FFT_FORWARD);
   FFT.complexToMagnitude(vReal_ref, vImag_ref, FFT_SIZE);
+}
+
+double getCompresedSpectrr(const int16_t* samples, int size) {
+  Serial.println("Inside getCompresedSpectrr");
+  double avgSpectrum[NUM_BINS] = {0};
+  for (int i = 0; i < size / FFT_SIZE; i++) {
+    createSpecRef(&samples[i * FFT_SIZE]);
+   // Serial.println("createSpecRef");
+
+    for (int i = 0; i < NUM_BINS; i++) {
+      avgSpectrum[i] = avgSpectrum[i] + vReal_ref[i];
+    }
+  }
+
+  float hzInOneSample = -7.8125;//SAMPLE_RATE / FFT_SIZE;  // 7,8125
+
+  for (int i = 0; i < NUM_BINS; i++) {
+    avgSpectrum[i] = avgSpectrum[i] / 4;
+    Serial.print("hz: ");
+    Serial.print(hzInOneSample += 7.8125);
+    Serial.print(" | ");
+    Serial.println(avgSpectrum[i]);
+  }
+
+  return *avgSpectrum;
+}
+
+double getCompresedSpectr() {
+  const int16_t* ref = refsAudio[0];
+   getCompresedSpectrr(&ref[1], 4096);
+   return 0.1;
 }
 
 void createSpecMic(const int16_t * samples) {
@@ -881,17 +912,31 @@ bool fullCompare(bool ts) {
   return true;
 }
 
-
-
-
-#define NUM_WINDOWS 4
+//#define NUM_WINDOWS 4
 #define SAMPLING_FREQ 8000
+#include "sound/spectr.h"
+#include "reference/SilenceSpectr.h"
+#include <cmath> // Required for std::isnan()
+#include <iostream>
 
+struct Result {
+  float energy;
+  float distance;
+};
+
+float computeDistance(double* spectr, int spectrSize) {
+  float distance = 0;
+  for (int i = 0; i < spectrSize; i++) {
+    if (spectr[i] <= 0.9) continue;
+    distance++;
+  }
+
+  return distance;
+}
 
 // Функция вычисления энергии двигателя в диапазоне 150-1600 Гц
-float computeEngineEnergy(const int16_t* samples, const int16_t* hzRange) {
-  double avgSpectrum[FFT_SIZE / 2] = {0};
-
+Result computeEngineEnergy(const int16_t* samples, const int16_t* hzRange, uint8_t NUM_WINDOWS) {
+  double avgSpectrum[NUM_BINS] = {0};
 
   for (int w = 0; w < NUM_WINDOWS; w++) {
     int start = w * FFT_SIZE; // без перекрытия
@@ -906,80 +951,58 @@ float computeEngineEnergy(const int16_t* samples, const int16_t* hzRange) {
     FFT.compute(vReal_cur, vImag_cur, FFT_SIZE, FFT_FORWARD);
     FFT.complexToMagnitude(vReal_cur, vImag_cur, FFT_SIZE);
 
-    // Усреднение
-    //static bool isPrint = false;
-    for (int i = 0; i < FFT_SIZE / 2; i++) {
-      //float currentEnergy = vReal_cur[i];
-      // if (currentEnergy > 3 && currentEnergy < 5) {
-      //   avgSpectrum[i] += currentEnergy;
-      //   continue;
-      // }
-      // if (currentEnergy < 1) {
-      //   avgSpectrum[i] += currentEnergy * 0.3;
-      //   continue;
-      // }
-
-      // if (currentEnergy < 2) {
-      //   avgSpectrum[i] += currentEnergy * 0.6;
-      //   continue;
-      // }
-
-      // if (currentEnergy < 3) {
-      //   avgSpectrum[i] += currentEnergy * 0.9;
-      //   continue;
-      // }
-
-      // if (currentEnergy > 10) {
-      //   avgSpectrum[i] += currentEnergy;
-      //   continue;
-      // }
-      // if (currentEnergy > 7.5) {
-      //   avgSpectrum[i] += currentEnergy * 1.6;
-      //   continue;
-      // }
-      // if (currentEnergy > 5) {
-      //   avgSpectrum[i] += currentEnergy * 1.3;
-      //   continue;
-      // }
-
+    for (int i = 0; i < NUM_BINS; i++) {
       avgSpectrum[i] += vReal_cur[i];
     }
-
-    // if (isPrint == false) {
-    //   for (int i = 0; i < FFT_SIZE / 2; i++) {
-    //     double amplitude = vReal_cur[i];  // амплитуда частоты i
-    //     double amplitude_dB =
-    //         20.0 * log10(amplitude / 1.0 + 1e-9);  // +1e-9 чтобы не было log(0)
-    //     Serial.printf("%d Гц = %.2f dB ",
-    //                   (int)(i * (SAMPLING_FREQ / (double)FFT_SIZE)),
-    //                   amplitude_dB);
-    //                   Serial.println(vReal_cur[i]);
-    //   }
-    // }
-
-    // isPrint = true;
   }
 
   // Делим на количество окон
-  for (int i = 0; i < FFT_SIZE / 2; i++) {
+  for (int i = 0; i < NUM_BINS; i++) {
     avgSpectrum[i] /= NUM_WINDOWS;
   }
-
+ 
 
   float hzInOneSample = SAMPLE_RATE / FFT_SIZE; // 7,8125
-
+  float hzInOneSample256 = SAMPLE_RATE / 256; // 7,8125
   double energy = 0;
 
-  for (uint8_t i = 0; i < 2; i++) {
-    int binStart = floor(hzRange[i] / hzInOneSample) - 1;
-    int binEnd = binStart + 6;
-    for (int i = binStart; i < binEnd; i++) {
+  int binStart = (hzRange[0] / hzInOneSample);
+  int binEnd = (hzRange[1] / hzInOneSample);
 
-      energy += avgSpectrum[i] * avgSpectrum[i];
+  double *sliceSpectr = &avgSpectrum[binStart];
+  int spectrEnd = binEnd;
+
+  // noise subtraction using spectrum
+  if (NUM_WINDOWS == 8) {
+    int indexAverge = 0;
+    for (int j = 0; j < 128; j++) {
+      double averge = silenceSpectr[j] / 4;
+      for (int i = 0; i < 4; i++) {
+        if (avgSpectrum[indexAverge] - averge < 0) {
+          avgSpectrum[indexAverge] = 0;
+        } else {
+          avgSpectrum[indexAverge] = avgSpectrum[indexAverge] - averge;
+        }
+        indexAverge++;
+      }
     }
   }
-//Serial.println(energy);
-  return sqrt(energy);
+
+  lowPassIIR(sliceSpectr, spectrEnd, 0.8);  // work
+  float avergeMax = getAvergeMax(sliceSpectr, spectrEnd, 20);
+  muteSmallPeaks(sliceSpectr, spectrEnd, avergeMax);
+  float distance = computeDistance(sliceSpectr, spectrEnd);
+  reduceTo(sliceSpectr, spectrEnd, 1);
+
+  for (int i = binStart; i < binEnd; i++) {
+    energy += avgSpectrum[i] * avgSpectrum[i];
+  }
+
+  Result result;
+  result.energy = energy;
+  result.distance = distance;
+ // return energy; //sqrt(energy);
+  return result;
 }
 
 float compareEngineSound(float &energyRef, float &energyMic) {
@@ -994,7 +1017,7 @@ float compareEngineSoundInt(float &energyRef, float &energyMic) {
   float similarity = fabs((1.0f - diff) * 100.0f);
   //float diff = fabs((energyRef - energyMic) * 100 / energyRef);
  // float similarity = (1.0f - diff) * 100.0f; // переводим в проценты
-  Serial.println(similarity);
+ // Serial.println(similarity);
 
   if (similarity > 200) similarity = 0;
   if (similarity > 100) similarity = 100 - (similarity - 100);
@@ -1002,59 +1025,130 @@ float compareEngineSoundInt(float &energyRef, float &energyMic) {
   return similarity;
 }
 
+float compareData(float &dataRef, float &dataMic) {
+  if (dataRef == 0) return 0; // защита от деления на ноль
+  float diff = fabs(dataRef - dataMic) / dataRef;
+  float similarity = fabs((1.0f - diff) * 100.0f);
+
+
+  if (similarity > 200) similarity = 0;
+  if (similarity > 100) similarity = 100 - (similarity - 100);
+
+  return similarity;
+}
+
+struct Similarity {
+  float energy;
+  float distance;
+  float general;
+};
+
+Similarity compareEnergyAndDistance(Result& refED, Result& micED) {
+  Similarity similarity;
+  similarity.energy = compareData(refED.energy, micED.energy);
+  similarity.distance = compareData(refED.distance, micED.distance);
+  similarity.general = (similarity.energy + similarity.distance * 0.9) / 2;
+  return similarity;
+}
+
+#define COEF_SIMILARUTY 59
+
 // 330-1460
 bool fullCompareHz() {
-  static float results[192] = {};
-  static float resultsInt[192] = {};
+  static Similarity results[192] = {};
+
   unsigned long start = micros();
+  
   uint8_t index = 0;
   bool stop = false;
   for (uint8_t k = 0; k < 4 && !stop; k++) {
     const int16_t* ref = refsAudio[k];
     const int16_t* hzRange = hzRanges[k];
 
-    Serial.print("\nCompare: ");
-    Serial.print(nameReference[k]);
-    Serial.println(k);
+    // Serial.print("\nCompare: ");
+    // Serial.print(nameReference[k]);
+    // Serial.println(k);
 
-    float energyRef = computeEngineEnergy(ref, hzRange);
+    Result resultRef = computeEngineEnergy(ref, hzRange, 4);
     
-    for (uint8_t j = 0; j < CURRENT_AUDIO_SIZE / 4096; j++) {
-      const int16_t * mic = &current_audio[j * FFT_SIZE];
-      float energyMic = computeEngineEnergy(mic, hzRange);
-
-      float resultInt = compareEngineSoundInt(energyRef, energyMic);
-      float result = compareEngineSound(energyRef, energyMic);
-      results[index] = result;
-      resultsInt[index] = resultInt;
+    for (uint8_t j = 0; j < CURRENT_AUDIO_SIZE / 8192; j++) {
+      //const int16_t * mic = &current_audio[j * FFT_SIZE];
+      const int16_t * mic = &current_audio[j * 8192];
+      Result resultMic = computeEngineEnergy(mic, hzRange, 8);
+      Similarity simularity = compareEnergyAndDistance(resultRef, resultMic);
+      results[index] = simularity;
       index++;
     }
   }
-
-  // Вывод результата
+  
   Serial.println("\n════════════════════════════════════════\n");
   uint8_t indexName = 0;
+  float currentSimularuty = 0;
+  float maxSimularuty = 0;
   for (uint8_t i = 0; i < index; i++) {
-    if (i % 3 == 0) {
+    if (i % 2 == 0) {
       Serial.print("════");
       Serial.print(nameReference[indexName++]);
-      float isSimularuty =
-          (resultsInt[i] + resultsInt[i + 1] + resultsInt[i + 2]) / 3;
-      if (isSimularuty > 74) {
-        Serial.print("   ✓ ПОХОЖ ");
+      currentSimularuty =
+          ((results[i].general + results[i + 1].general)  / 2 );// + resultsInt[i + 2]) / 3;
+
+      if (currentSimularuty > COEF_SIMILARUTY) {
+       Serial.print("   ✓ ПОХОЖ ");
       } else {
         Serial.print("   ✗ ЗВУК НЕ ПОХОЖ ");
       }
-        Serial.print(isSimularuty);
-        Serial.print("%   ");
 
+      Serial.print(currentSimularuty);
+      Serial.print("%   ");
       Serial.println("════");
+
+      if (currentSimularuty > maxSimularuty) {
+        // if (indexName - 1 == 0 && currentSimularuty < 75) {
+        //   currentSimularuty = 50;
+        // } else {
+        //   maxSimularuty = currentSimularuty;
+        // }
+        maxSimularuty = currentSimularuty;
+      }
     }
-    Serial.print(results[i]);
+
+    Serial.print("E: ");
+    Serial.print(results[i].energy);
     Serial.print(", ");
-    Serial.print(resultsInt[i]);
-    Serial.println("%");
+    Serial.print("D: ");
+    Serial.print(results[i].distance);
+    Serial.print(", ");
+    Serial.print("G: ");
+    Serial.println(results[i].general);
   }
+
+  // Вывод результата
+  // Serial.println("\n════════════════════════════════════════\n");
+  // uint8_t indexName = 0;
+  // float currentSimularuty;
+  // for (uint8_t i = 0; i < index; i++) {
+  //   if (i % 3 == 0) {
+  //     Serial.print("════");
+  //     Serial.print(nameReference[indexName++]);
+  //     currentSimularuty =
+  //         (resultsInt[i] + resultsInt[i + 1] + resultsInt[i + 2]) / 3;
+
+  //     if (currentSimularuty > 59) {
+  //       Serial.print("   ✓ ПОХОЖ ");
+  //       //break;
+  //     } else {
+  //       Serial.print("   ✗ ЗВУК НЕ ПОХОЖ ");
+  //     }
+  //     Serial.print(currentSimularuty);
+  //     Serial.print("%   ");
+
+  //     Serial.println("════");
+  //   }
+  //   Serial.print(results[i]);
+  //   Serial.print(", ");
+  //   Serial.print(resultsInt[i]);
+  //   Serial.println("%");
+  // }
 
 //   Результат diff показывает отличие в спектральной энергии:
 
@@ -1066,9 +1160,9 @@ bool fullCompareHz() {
 
   Serial.println("════════════════════════════════════════\n");
 
-
   unsigned long elapsed = micros() - start;
   Serial.printf("Время вычисления FFT: %lu мкс (%.2f мс)\n", elapsed,
                 elapsed / 1000.0);
-  return true;
+
+  return maxSimularuty > COEF_SIMILARUTY;
 }

@@ -155,20 +155,35 @@ int decimation_fir(int16_t* buffer, int numSamples16) {
 }
 
 // const float COEFS[31] = {
-//     0.001199f, -0.001655f, 0.002610f, -0.004230f, 0.006629f, -0.009857f,
-//     0.013883f, -0.018595f, 0.023802f, -0.029246f, 0.034625f, -0.039613f,
-//     0.043891f, -0.047175f, 0.049241f, 0.948980f,  0.049241f, -0.047175f,
-//     0.043891f, -0.039613f, 0.034625f, -0.029246f, 0.023802f, -0.018595f,
-//     0.013883f, -0.009857f, 0.006629f, -0.004230f, 0.002610f, -0.001655f,
-//     0.001199f};
+//     -0.000650f, 0.000321f,  0.000230f, -0.001377f, 0.003514f, -0.006983f,
+//     0.012007f,  -0.018630f, 0.026681f, -0.035772f, 0.045325f, -0.054625f,
+//     0.062905f,  -0.069437f, 0.073620f, 0.925743f,  0.073620f, -0.069437f,
+//     0.062905f,  -0.054625f, 0.045325f, -0.035772f, 0.026681f, -0.018630f,
+//     0.012007f,  -0.006983f, 0.003514f, -0.001377f, 0.000230f, 0.000321f,
+//     -0.000650f};
 
-const float COEFS[39] = {
-  0.0229922, 0.0361072, 0.058661,  0.028859,  0.0343555, 0.0368403, 0.0378684, 0.0052032,
-  0.0217451, 0.0435038, 0.0674594, 0.0016966, 0.0273074, 0.0009858, 0.0412764, 0.0626623,
-  0.0144396, 0.0563435, 0.0233396, 0.010245,  0.0222212, 0.0142297, 0.0111425, 0.0182707,
-  0.0082335, 0.0456086, 0.026059,  0.0197308, 0.0144705, 0.0526643, 0.026537,  0.002208,
-  0.0209359, 0.0210963, 0.0286003, 0.0128406, 0.0131623, 0.0092776, 0.0008202
-};
+// // COEFS for fir filter, 4s noise silence
+// const float COEFS[31] = {
+//     0.0517139, 0.0512294, 0.0397871, 0.0141325, 0.0306931, 0.0367449, 0.0685451,
+//     0.0507745, 0.0474638, 0.008411,  0.0498235, 0.0638109, 0.0251105, 0.0513882,
+//     0.006699,  0.0144519, 0.0286262, 0.0092404, 0.0090731, 0.049486,  0.0102321,
+//     0.1099786, 0.0202167, 0.0126269, 0.0091256, 0.0494336, 0.0015592, 0.0067917,
+//     0.026255,  0.0308816, 0.015694};
+
+// COEFS for fir filter, 500-3500
+const float COEFS[31] = {
+    0.000000f,  0.002899f,  0.000000f,  0.008915f,  -0.000000f, 0.013971f,
+    0.000000f,  0.000000f,  -0.000000f, -0.051238f, -0.000000f, -0.135086f,
+    -0.000000f, -0.216375f, 0.000000f,  0.750856f,  0.000000f,  -0.216375f,
+    -0.000000f, -0.135086f, -0.000000f, -0.051238f, -0.000000f, 0.000000f,
+    0.000000f,  0.013971f,  -0.000000f, 0.008915f,  0.000000f,  0.002899f,
+    0.000000f};
+
+// NOISE_DECR 4s noise silence
+const float NOISE_DECR[31] = {128, -127, 99,  35,   -76, 91,   -170, -126,
+                         118, 21,   124, -159, -62, 128,  -17,  36,
+                         -71, 23,   23,  123,  25,  -273, 50,   -31,
+                         -23, 123,  4,   -17,  65,  -77,  39};
 
 const size_t SIZE_COEFS = sizeof(COEFS) / sizeof(COEFS[0]);
 
@@ -196,94 +211,102 @@ int16_t newSample(float newValue) {
   return (int16_t)acc;
 }
 
+int16_t newDecrSample(float newValue) {
+  static int8_t historyIndex = 0;
+
+  // Сдвигаем кольцевой индекс назад
+  historyIndex--;
+  if (historyIndex < 0) historyIndex = SIZE_COEFS - 1;
+
+  // Записываем новый отсчёт
+  HISTORY[historyIndex] = (int16_t)newValue;
+
+  // Считаем свёртку
+  float acc = 0.0f;
+  int8_t index = historyIndex;
+  for (uint8_t i = 0; i < SIZE_COEFS; i++) {
+    acc += COEFS[i] * HISTORY[index];
+    index++;
+    if (index >= SIZE_COEFS) index = 0; // циклический переход
+  }
+
+  return (int16_t)acc;
+}
+
 void firFilter(int16_t* buffer, int numSamples) {
   for (int i = 0; i < numSamples; i++) {
     buffer[i] = newSample(buffer[i]);
   }
 }
 
+void decrFilter(int16_t* buffer, int numSamples) {
+  static uint8_t noiseIndex = 0;
+  for (int i = 0; i < numSamples; i++, noiseIndex++) {
+    if (noiseIndex > SIZE_COEFS - 1) noiseIndex = 0;
 
-void decimation2K1(int16_t* buffer, int numSamples) {
+    int16_t value = buffer[i], noiseValue = NOISE_DECR[noiseIndex];
+
+    if (value > 0 && noiseValue > 0) {
+      value = value - noiseValue;
+    } else {
+      value = value + noiseValue;
+    }
+
+    buffer[i] = value;
+  }
+}
+
+int decimation2K1(int16_t* sourceBuffer, int16_t* targetBuffer, int numSamples) {
   static int16_t lastVal = 0;
-  static int16_t isLastVal = false;
+  static bool isLastVal = false;
 
-  int i = 0;
+  int i = 0, j = 0;
   if (isLastVal) {
-    buffer[0] = (int16_t)(((lastVal + buffer[0]) / 2));
+    targetBuffer[0] = (int16_t)(((lastVal + sourceBuffer[0]) / 2));
     i = 1;
+    j = 1;
   }
 
   if ((numSamples - i) % 2 == 1) {
     isLastVal = true;
-    lastVal = buffer[numSamples - 1];
+    lastVal = sourceBuffer[numSamples - 1];
   } else {
     isLastVal = false;
   }
 
-  int j = 0;
-
   for (i; i < numSamples; i += 2) {
-    buffer[j] = (int16_t)(((buffer[i] + buffer[i + 1]) / 2));
-    j++;
+    targetBuffer[j++] = (int16_t)(((sourceBuffer[i] + sourceBuffer[i + 1]) / 2));
   }
+
+  return j;
 }
 
-// const float NOISE[30] = {
-//     0.01890495, 0.02655581,  0.04511684, 0.03490814, 0.05790122, 0.04235221,
-//     0.02126213, 0.008865285, 0.01922908, 0.02869133, 0.01584027, 0.07692308,
-//     0.06196371, 0.01666928,  0.03208772, 0.04977556, 0.0678689,  0.006033995,
-//     0.02923334, 0.05882353,  0.01518884, 0.0283027,  0.03966186, 0.0163815,
-//     0.04397103, 0.01484664,  0.02765638, 0.0356439,  0.01123286, 0.03581527};
-
-// int16_t newNoiseSample(float newValue) {
-//   static int8_t historyIndex = 0;
-
-//   // Сдвигаем кольцевой индекс назад
-//   historyIndex--;
-//   if (historyIndex < 0) historyIndex = 30;
-
-//   // Записываем новый отсчёт
-//   HISTORY[historyIndex] = (int16_t)newValue;
-
-//   // Считаем свёртку
-//   float acc = 0.0f;
-//   int8_t index = historyIndex;
-//   for (uint8_t i = 0; i < 31; i++) {
-//     acc += COEFS[i] * HISTORY[index];
-//     index++;
-//     if (index >= 31) index = 0; // циклический переход
-//   }
-
-//   return (int16_t)acc;
-// }
-
-// void noiseFilter(int16_t* buffer, int numSamples) {
-//   for (int i = 0; i < numSamples; i++) {
-//     buffer[i] = newNoiseSample(buffer[i]);
-//   }
-// }
 void from24To16bit(int32_t* buffer32, int16_t* buffer16Hz, int numSamples) {
   for (int i = 0; i < numSamples; i++) {
     buffer16Hz[i] = (int16_t)(buffer32[i] >> 8);
   }
-//   // Края без фильтра (копируем как есть)
-//   buffer8[0] = buffer[0];
-//   buffer8[1] = buffer[1];
-//   buffer8[size - 2] = buffer[size - 2];
-//   buffer8[size - 1] = buffer[size - 1];
+}
+
+#define N 8
+int16_t buffer[N] = {0};
+uint8_t idx = 0;
+
+int16_t moving_average(int16_t x) {
+    buffer[idx++] = x;
+    if (idx >= N) idx = 0;
+
+    float sum = 0;
+    for (int i = 0; i < N; i++) sum += buffer[i];
+    buffer[idx] = sum;
+    return sum;
 }
 // --- Фильтр: скользящее среднее на 4 точки ---
 void movingAverage(int16_t* buffer, int numSamples) {
-  for (int i = 0; i < numSamples - 2; i++) {
-    buffer[i] =
-        (buffer[i] + buffer[i + 1]) / 2;
+  for (int i = 0; i < numSamples; i++) {
+    buffer[i] = moving_average(buffer[i]);
   }
-//   // Края без фильтра (копируем как есть)
-//   buffer8[0] = buffer[0];
-//   buffer8[1] = buffer[1];
-//   buffer8[size - 2] = buffer[size - 2];
-//   buffer8[size - 1] = buffer[size - 1];
 }
+
 //#include <iostream> 
 #include <cstring>
 

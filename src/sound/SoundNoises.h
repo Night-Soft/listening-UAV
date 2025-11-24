@@ -23,6 +23,7 @@ void lowPassIIR(int16_t* samples, int& numSamples, const float alpha = 0.95) {
   }
 }
 
+
 // new lowPassIIR
 // void lowPassIIR(int16_t* samples, int& numSamples, const float alpha = 0.95) {
 //   static float filtered = 0.0f;

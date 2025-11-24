@@ -9,9 +9,9 @@
 extern SemaphoreHandle_t xSemaphore;
 extern int16_t firstLast[2];
 
-extern bool isHighIRR, isLowPassIIR, isIncreaseVolume;
+extern bool isAverge, isFir, isSpectr;
 extern float lowIIR, highIRR, volume;
-extern void changeFilter(bool isLow = true, float value = 0);
+extern void changeFilter(String &cmd, String &value);
 
 typedef enum {
   GPIO36_ADC1 = ADC1_CHANNEL_0, /*!< GPIO36 is ADC1 channel 0 */
@@ -49,7 +49,6 @@ class RecordSound {
   void setBuffer(int16_t* buffer, size_t numSamples);
   void start(bool disableBuffer = false);
   void pause();
-  void pauseBlocked();
 
   void send();
   void init();
@@ -58,9 +57,10 @@ class RecordSound {
 
   // callback if buffer in millis is full
   void onReady(void (*callback)(int16_t*));
-
-  // callback if I2S data conver and can read 
+  void toggleOnReady(bool isEnable);
+  // callback if I2S data conver and can read
   void onRead(void (*callback)(int16_t*, int*));
+  void toggleOnRead(bool isEnable);
 
  private:
   bool isI2SEnabled = false;

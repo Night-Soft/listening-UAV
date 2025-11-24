@@ -98,51 +98,61 @@ def createSamplesH(
     createFile(samples, varName, hzRange, js)
 
 # fileName = "output01.11.25.wav"
-fileName = "output 04.11.25.wav"
+fileName = "noise silence.wav"
 createSamplesH(
-    f"{pathPython}{fileName}",
-    varName="startRef217_10_25",
-    startPos=95520,
-    count=1024,
-    numSamples=4,
+    f"{pathWav}{fileName}",
+    varName="noiseSilence",
+    startPos=8000,
+    count=24064,
+    numSamples=1,
     distanceBtwSampl=0,
-    hzRange = [670, 1500]
+    hzRange = [150, 1500]
 )
 
-createSamplesH(
-    f"{pathPython}{fileName}",
-    varName="midddleRef117_10_25",
-    startPos=236400,
-    count=1024,
-    numSamples=4,
-    distanceBtwSampl=0,
-    hzRange = [640, 1500]
-)
+# createSamplesH(
+#     f"{pathWav}{fileName}",
+#     varName="startRef217_10_25",
+#     startPos=121824,
+#     count=1024,
+#     numSamples=4,
+#     distanceBtwSampl=0,
+#     hzRange = [150, 1500]
+# )
 
-createSamplesH(
-    f"{pathPython}{fileName}",
-    varName="midddleRef217_10_25",
-    startPos=546948,
-    count=1024,
-    numSamples=4,
-    distanceBtwSampl=0,
-    hzRange = [400, 1500]
-)
+# createSamplesH(
+#     f"{pathWav}{fileName}",
+#     varName="midddleRef117_10_25",
+#     startPos=240000,
+#     count=1024,
+#     numSamples=4,
+#     distanceBtwSampl=0,
+#     hzRange = [150, 1500]
+# )
 
-createSamplesH(
-    f"{pathPython}{fileName}",
-    varName="awayRef17_10_25",
-    startPos=507408,
-    count=1024,
-    numSamples=4,
-    distanceBtwSampl=0,
-    hzRange = [470, 1360]
+# createSamplesH(
+#     f"{pathWav}soundUAV2.wav",
+#     varName="midddleRef217_10_25",
+#     startPos=8540,
+#     count=1024,
+#     numSamples=4,
+#     distanceBtwSampl=0,
+#     hzRange = [150, 1500]
+# )
 
-)
+# createSamplesH(
+#     f"{pathWav}{fileName}",
+#     varName="awayRef17_10_25",
+#     startPos=410880,
+#     count=1024,
+#     numSamples=4,
+#     distanceBtwSampl=0,
+#     hzRange = [150, 1500]
+
+# )
 
 # js
 
-# pathSrc = pathPython
+#pathSrc = pathPython
 # noiseSilence = 'noise silence.wav'
 # createSamplesH(
 #     f"{pathWav}{noiseSilence}",

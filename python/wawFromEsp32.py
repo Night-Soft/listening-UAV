@@ -57,8 +57,6 @@ def stopWriteAudio():
     ser.write(b"stop\n")  # отправляем подтверждение
     ser.flush()
 
-
-
 with wave.open("output.wav", "wb") as wf:
     wf.setnchannels(channels)
     wf.setsampwidth(sample_width)
@@ -66,14 +64,11 @@ with wave.open("output.wav", "wb") as wf:
 
     recording = False
     printB("Send start")
-    ser.write(b"start\n")  # отправляем подтверждение
-    #ser.write(b"start\n")  # отправляем подтверждение
-    #ser.write(b"start\n")  # отправляем подтверждение
+    ser.write(b"recordToPc\n")
 
     try:
         while True:
             line = ser.readline().decode(errors="ignore").strip()
-            #print(line)
 
             if line == "Record start":
                 if infinityRecording:
@@ -96,7 +91,6 @@ with wave.open("output.wav", "wb") as wf:
                 ser.reset_input_buffer()
 
                 if infinityRecording == False:
-                    fisrstLast = []
                     counter = 0
                     seconds = 0
                     print(Fore.YELLOW + f"\rWriting: {0}s  ", end="")
@@ -107,15 +101,8 @@ with wave.open("output.wav", "wb") as wf:
                             seconds +=1
                             print(Fore.YELLOW + f"\rWriting: {seconds}s  ", end="")
 
-                    data = ser.read(2)
-                    value = struct.unpack("<h", data)[0]
-                    fisrstLast.append(value)
-                    
-                    print(Fore.YELLOW + f"first: {fisrstLast[0]}")
-                    print(Fore.YELLOW + f"last: {fisrstLast[1]}")
-
                     recording = False
-                    print("\n");
+                    print("\n")
                     stopWriteAudio()
                     continue
 
