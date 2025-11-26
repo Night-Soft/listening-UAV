@@ -104,7 +104,7 @@ void Task::pause() {
 AudioTaskConfig taskConfig;
 RecordingControl recordingControl;
 
-float lowIIR = 0.25, highIRR = 0.65, volume = 0;
+float lowIIR = 0.3, highIRR = 0.65, volume = 0;
 //float lowIIR = 0, highIRR = 0, volume = 0;
 bool isAverge = false, isFir = true, isSpectr = false;
 
@@ -152,7 +152,7 @@ int totalSamples(int& numSamples16) {
   }
 
   if (isSpectr) {
-    firFilter(buffer8, numSamples8);
+    firFilter(buffer8, numSamples8); // todo
   }
 
   // decrFilter(buffer8, numSamples8);

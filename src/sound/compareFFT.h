@@ -924,11 +924,50 @@ struct Result {
   float distance;
 };
 
-float computeDistance(double* spectr, int spectrSize) {
+float micHz[512] = {0};
+float refHz[512] = {0};
+
+void computeFrequency(float* hzArr, double* spectr, int binStart, int binEnd) {
+  int spectrSize = binEnd - binStart;
+
   float distance = 0;
+  float currentBin = 0;
+  int idxHz = 0;
   for (int i = 0; i < spectrSize; i++) {
     if (spectr[i] <= 0.9) continue;
-    distance++;
+    hzArr[idxHz++] = (binStart + i) * 7.8125;
+  }
+}
+
+float compareFrequency(float* hzArr) {
+  int sizeMic = 0;
+  int sizeRef = 0;
+
+  for (uint16_t j = 0; j < 512; j++) {
+    if (micHz[j] == 0) sizeMic = j;
+    if (refHz[j] == 0) sizeRef = j;
+
+    if (sizeMic && sizeRef) break;
+  }
+
+  int size = sizeMic > sizeRef ? sizeMic : sizeRef;
+
+  for (uint8_t i = 0; i < size; i++) {
+
+  }
+
+  memset(micHz, 0, sizeof(micHz));
+  memset(refHz, 0, sizeof(refHz));
+
+  return 0;
+}
+
+float computeDistance(double* spectr, int spectrSize) {
+  float distance = 0;
+  float currentBin = 0;
+  for (int i = 0; i < spectrSize; i++) {
+    if (spectr[i] <= 0.9) continue;
+    distance += i;
   }
 
   return distance;
@@ -1051,7 +1090,7 @@ Similarity compareEnergyAndDistance(Result& refED, Result& micED) {
   return similarity;
 }
 
-#define COEF_SIMILARUTY 59
+#define COEF_SIMILARUTY 45
 
 // 330-1460
 bool fullCompareHz() {
@@ -1103,11 +1142,6 @@ bool fullCompareHz() {
       Serial.println("════");
 
       if (currentSimularuty > maxSimularuty) {
-        // if (indexName - 1 == 0 && currentSimularuty < 75) {
-        //   currentSimularuty = 50;
-        // } else {
-        //   maxSimularuty = currentSimularuty;
-        // }
         maxSimularuty = currentSimularuty;
       }
     }
@@ -1121,42 +1155,6 @@ bool fullCompareHz() {
     Serial.print("G: ");
     Serial.println(results[i].general);
   }
-
-  // Вывод результата
-  // Serial.println("\n════════════════════════════════════════\n");
-  // uint8_t indexName = 0;
-  // float currentSimularuty;
-  // for (uint8_t i = 0; i < index; i++) {
-  //   if (i % 3 == 0) {
-  //     Serial.print("════");
-  //     Serial.print(nameReference[indexName++]);
-  //     currentSimularuty =
-  //         (resultsInt[i] + resultsInt[i + 1] + resultsInt[i + 2]) / 3;
-
-  //     if (currentSimularuty > 59) {
-  //       Serial.print("   ✓ ПОХОЖ ");
-  //       //break;
-  //     } else {
-  //       Serial.print("   ✗ ЗВУК НЕ ПОХОЖ ");
-  //     }
-  //     Serial.print(currentSimularuty);
-  //     Serial.print("%   ");
-
-  //     Serial.println("════");
-  //   }
-  //   Serial.print(results[i]);
-  //   Serial.print(", ");
-  //   Serial.print(resultsInt[i]);
-  //   Serial.println("%");
-  // }
-
-//   Результат diff показывает отличие в спектральной энергии:
-
-// 0.0 → идеально совпадает
-
-// 0.1–0.2 → похоже
-
-// >0.3 → звук заметно другой (например, неисправность)
 
   Serial.println("════════════════════════════════════════\n");
 
