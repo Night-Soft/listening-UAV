@@ -36,7 +36,7 @@ float getAvergeMax(double* array, int arrayLength, uint8_t numberOfSlice) {
 
 void muteSmallPeaks (double *spectr, int spectrSize, float avergeMax)  {
     for (int i = 0; i < spectrSize; i++) {
-        if ((spectr[i] / avergeMax) > 1) continue;
+        if ((spectr[i] / avergeMax) > 1) continue; // всё что больше среднего оставляем
         spectr[i] = spectr[i] * (spectr[i] / avergeMax);
     }
 }

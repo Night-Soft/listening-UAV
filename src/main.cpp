@@ -4,13 +4,14 @@
 #include "sleep.h"
 #include "sound/compareFFT.h"
 #include "sound/ClearSpectr.h"
+//#include "reference/noiseSilence.h"
 //#include "utils.h
 
-#define CURRENT_AUDIO_SIZE 16384  // 8192 // 1024*8 : 24576 = 3s, 12288 = 1.536s, 16384 = 2.048s
 #define AUDIO_RATE 8000
-
+#define MANUAL_BTN_PIN 23
 //#define isRecordToPC true
-#define IS_DEV true
+
+//#define IS_DEV true
 
 int16_t currentAudio[CURRENT_AUDIO_SIZE] = {0};
 
@@ -20,6 +21,16 @@ struct Command {
   String command;
   String value;
 };
+
+volatile bool isInterrupt = false;
+uint16_t clicksCounter = 0;
+volatile int buttonTimer = 0;
+
+IRAM_ATTR void btnItr(){
+  isInterrupt = true;
+  clicksCounter++;
+  buttonTimer = millis();
+}
 
 void ifSerialAvailable() {
   if (Serial.available()) {
@@ -54,13 +65,19 @@ void ifSerialAvailable() {
       Serial.println(res);
       delay(100);
       Serial.println("SendSpectr");
-      delay(100);
+      Serial.flush();
+      delay(1000);
 
-      for (int i = 0; i < 128; i++) {
+      for (int i = 0; i < 512; i++) {
         Serial.write((uint8_t*)&noiseFloor[i], 8);
       }
 
       Serial.println("EndSpectr");
+
+      Serial.print("\nFirst: ");
+      Serial.print(noiseFloor[0]);
+      Serial.print("\nLast: ");
+      Serial.println(noiseFloor[511]);
 
     }
 
@@ -79,7 +96,7 @@ void ifSerialAvailable() {
 
     if (command == "getSpectr") {
       float hzInOneSample = SAMPLE_RATE / FFT_SIZE;  // 7,8125
-      getCompresedSpectr();
+      //getCompresedSpectr();
     }
 
     if (command == "read") {
@@ -140,9 +157,13 @@ void ifSerialAvailable() {
 }
 
 bool canCompare = false;
+SemaphoreHandle_t semaphoreCanCompare = NULL;
 void ifCanCompare() {
+  xSemaphoreTake(semaphoreCanCompare, portMAX_DELAY);
   if (canCompare) {
     canCompare = false;
+    xSemaphoreGive(semaphoreCanCompare);
+
     delay(50);
     Serial.println("Start compare");
 
@@ -152,7 +173,11 @@ void ifCanCompare() {
 #ifdef IS_DEV
     fullCompareHz();
 #else
-    sendWarrningIfNeeded(fullCompareHz());
+    bool isUav = fullCompareHz();
+    Serial.print("\nisUav: ");
+    Serial.println(isUav);
+
+    sendWarrningIfNeeded(isUav);
 #endif
 
     Serial.println("End compare");
@@ -162,16 +187,22 @@ void ifCanCompare() {
     delay(1000);
     record.start();
 #else
-    goToSleep();// go to sleep to 10s
+    if(!isUav) goToSleep();// go to sleep to 10s
+    Serial.println("Skip sleep.");
+    Serial.println("New Record after 10s");
+    delay(10000);
+    record.start();
 #endif
 
   }
+    xSemaphoreGive(semaphoreCanCompare);
 }
 
 void dataReady(int16_t* samples) {
   Serial.println("Data ready");
-
+  xSemaphoreTake(semaphoreCanCompare, portMAX_DELAY);
   canCompare = true;
+  xSemaphoreGive(semaphoreCanCompare);
 }
 
 void setupRecordToBuffer() {
@@ -183,12 +214,15 @@ void setupRecordToBuffer() {
 
 void setup() {
   Serial.begin(230400);
-  
+  pinMode(2,OUTPUT);
   #ifdef IS_DEV
   #else
   setupSleep();
   #endif
-  
+
+  semaphoreCanCompare = xSemaphoreCreateBinary();
+  xSemaphoreGive(semaphoreCanCompare);
+
   Serial.println("Start recording after 500ms");
   delay(500);
   record.enableI2S();
@@ -204,18 +238,57 @@ void setup() {
     sendWarrningIfNeeded(false, true);
   }
 
+  pinMode(MANUAL_BTN_PIN, INPUT_PULLUP);
+  attachInterrupt(MANUAL_BTN_PIN, btnItr, HIGH);
+
   //delay(3000);
   record.start();
+
 
   //delay(2000);
 
  // getCompresedSpectr();
 }
-
+int timer = 0;
+bool prevSend = false;
 void loop() {
-  #ifdef IS_DEV
-   ifSerialAvailable();
-  #endif
-   ifCanCompare();
-   delay(50);
+#ifdef IS_DEV
+  ifSerialAvailable();
+
+
+#endif
+
+  ifCanCompare();
+  delay(50);
+
+  static int coreTime = 0;
+
+  if (millis() - coreTime > 1000) {
+    coreTime = millis();
+    int core = xPortGetCoreID();
+    Serial.printf("Loop Running on core %d\n", core);
+  }
+  // if (isInterrupt) {
+  //   static int currentTime = 0;
+  //   static int clicks = 0;
+
+  //   currentTime = millis();
+  //   if (currentTime - buttonTimer > 50) {
+  //     buttonTimer = currentTime;
+  //     isInterrupt = false;
+
+  //     if (digitalRead(MANUAL_BTN_PIN)) {
+  //       Serial.print("interrupts: ");
+  //       Serial.print(clicksCounter);
+  //       Serial.print(" cliks: ");
+  //       Serial.println(++clicks);
+  //     }
+  //   }
+  // }
+
+  //  if(millis() - timer >= 1500) {
+  //   timer = millis();
+  //   sendWarrningIfNeeded(prevSend, true);
+  //   prevSend = !prevSend;
+  //  }
 }

@@ -400,7 +400,7 @@ void RecordSound::enableI2S() {
       NULL,                     // параметр
       1,                        // приоритет
       &taskConfig.task.handle,  // handle для управления задачей
-      1                         // запускать на core 1 (обычно свободнее)
+      0                        // запускать на core 1 (обычно свободнее)
   );
 
   this->isI2SEnabled = true;

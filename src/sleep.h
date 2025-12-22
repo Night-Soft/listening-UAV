@@ -3,9 +3,12 @@
 
 #include <Arduino.h>
 
+#define G433_SPEED 500
 #include <Gyver433.h>
 //Gyver433_RX<пин> tx;
 Gyver433_TX<22> tx;
+
+#include "SendWarring.h"
 
 #define uS_TO_S_FACTOR 1000000ULL  // Conversion factor for micro seconds to seconds
 #define TIME_TO_SLEEP  10           // Time ESP32 will go to sleep (in seconds)
@@ -63,10 +66,9 @@ void sendWarrningIfNeeded(const bool& isUAV, bool forceSend = false) {
   if (forceSend == false && prevSendUAV == false && isUAV == false) {
     return;
   }
-  static char data[] = "Hello from #xx";  // строка для отправки
 
-  static const char isUAWTxt[] = "isUAW";  // строка для отправки
-  static const char noUAWTxt[] = "noUAW";  // строка для отправки
+  const char isUAWTxt[] = "isUAW";  // строка для отправки
+  const char noUAWTxt[] = "noUAW";  // строка для отправки
 
   const char* whatSend;
   if (isUAV) {
@@ -88,9 +90,35 @@ void sendWarrningIfNeeded(const bool& isUAV, bool forceSend = false) {
   Serial.print("\nSended ");
   Serial.print(whatSend);
   Serial.println(" 3 times");
+
+  if (!forceSend) {
+    Serial.print("isPostTaskCreated: ");
+    Serial.println(postTask.isTaskCreated());
+
+    if (postTask.isTaskCreated() == false) postTask.create();
+
+    Serial.println("Sleep take port 15000ms.");
+    int core = xPortGetCoreID();
+    Serial.printf("Running on core %d\n", core);
+    postTask.takeSemaphore(pdMS_TO_TICKS(15000));
+
+    if (postTask.isSemaphoreFree == false) {
+      Serial.println("postTask Semaphore error, isTaked.");
+    } else {
+      Serial.println("xSPost is free, continue.");
+    }
+  }
 }
 
 void goToSleep() {
+  
+  for (uint8_t i = 0; i < 15; i++) {
+    digitalWrite(2, HIGH);
+    delay(50);
+    digitalWrite(2, LOW);
+    delay(50);
+  }
+
   Serial.println("Going to sleep now");
   delay(50);
   Serial.flush();

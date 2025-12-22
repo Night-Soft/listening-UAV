@@ -2,9 +2,12 @@
 .vscode
 .gitignore
 src/backup
+src/env.h
 lib
 include
 python/*.*
 python/other
 python/wav
 !python/*.py
+server/node_modules
+server/package-lock.json
